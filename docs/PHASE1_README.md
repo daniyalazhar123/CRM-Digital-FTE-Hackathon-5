@@ -1,5 +1,9 @@
 # Phase 1: Incubation Phase
 
+[![Phase 1 Complete](https://img.shields.io/badge/Phase%201-Complete-green)]()
+[![Exercises](https://img.shields.io/badge/Exercises-5/5-blue)]()
+[![Tests](https://img.shields.io/badge/Tests-19%20passing-green)]()
+
 **Status:** ✅ COMPLETE  
 **Duration:** Hours 1-16  
 **Role:** Director (directing AI, not writing code line-by-line)
@@ -43,7 +47,7 @@ Phase 1 focused on using Claude Code as an **Agent Factory** to explore the prob
 
 ## How to Run
 
-### Run Prototype
+### Run Prototype Tests
 ```bash
 cd "D:\Desktop4\The CRM Digital FTE"
 python src\agent\prototype_agent.py
@@ -79,6 +83,13 @@ Interaction 3 (WhatsApp follow-up): Ticket TKT-00003 - Handled
 cd src\mcp_server
 python mcp_server.py
 ```
+
+### Run Agent Tests (pytest)
+```bash
+python -m pytest tests/test_agent.py -v
+```
+
+**Expected:** 19 tests passing
 
 ---
 
@@ -180,7 +191,17 @@ python mcp_server.py
 | send_response | ✅ PASS |
 | get_customer_stats | ✅ PASS |
 
-**Overall:** 9 interactions tested, 1 escalated (11.1%), 8 handled by AI (88.9%)
+### Agent Tests (pytest)
+| Category | Tests | Passing |
+|----------|-------|---------|
+| Escalation Triggers | 5 | 5 ✅ |
+| Normal Responses | 5 | 5 ✅ |
+| Channels | 3 | 3 ✅ |
+| Response Content | 4 | 4 ✅ |
+| Returning Customer | 2 | 2 ✅ |
+| **TOTAL** | **19** | **19** ✅ |
+
+**Overall:** 19/19 tests passing (100%)
 
 ---
 
