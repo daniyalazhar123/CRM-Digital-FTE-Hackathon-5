@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crm-fte-api
+  namespace: crm-fte
+  labels:
+    app: crm-fte
+    component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: crm-fte
+      component: api
+  template:
+    metadata:
+      labels:
+        app: crm-fte
+        component: api
+    spec:
+      containers:
+      - name: crm-fte-api
+        image: your-registry/crm-digital-fte:latest
+        command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: crm-fte-config
+        - secretRef:
+            name: crm-fte-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crm-fte-api
+  namespace: crm-fte
+spec:
+  selector:
+    app: crm-fte
+    component: api
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP

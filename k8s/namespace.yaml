@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crm-fte
+  labels:
+    app: crm-fte
+    environment: production

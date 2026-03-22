@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crm-fte-config
+  namespace: crm-fte
+data:
+  # Application Settings
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  
+  # Database Configuration
+  DB_HOST: "crm-postgres.crm-fte.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "crm_db"
+  DB_USER: "postgres"
+  
+  # Groq API Configuration
+  MODEL_NAME: "llama-3.3-70b-versatile"
+  BASE_URL: "https://api.groq.com/openai/v1"
+  
+  # Kafka Configuration
+  KAFKA_BOOTSTRAP_SERVERS: "crm-kafka.crm-fte.svc.cluster.local:9092"
+  KAFKA_TOPIC_TICKETS: "fte.tickets.incoming"
+  KAFKA_TOPIC_ESCALATIONS: "fte.escalations"
+  KAFKA_TOPIC_METRICS: "fte.metrics"
+  
+  # Channel Configs
+  GMAIL_ENABLED: "true"
+  WHATSAPP_ENABLED: "true"
+  WEBFORM_ENABLED: "true"
+  
+  # Response Limits
+  MAX_EMAIL_LENGTH: "2000"
+  MAX_WHATSAPP_LENGTH: "1600"
+  MAX_WEBFORM_LENGTH: "1000"

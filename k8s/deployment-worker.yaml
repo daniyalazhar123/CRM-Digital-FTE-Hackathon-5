@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crm-fte-worker
+  namespace: crm-fte
+  labels:
+    app: crm-fte
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: crm-fte
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: crm-fte
+        component: worker
+    spec:
+      containers:
+      - name: crm-fte-worker
+        image: your-registry/crm-digital-fte:latest
+        command: ["python", "workers/message_processor.py"]
+        envFrom:
+        - configMapRef:
+            name: crm-fte-config
+        - secretRef:
+            name: crm-fte-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - pgrep
+            - -f
+            - message_processor
+          initialDelaySeconds: 30
+          periodSeconds: 60
