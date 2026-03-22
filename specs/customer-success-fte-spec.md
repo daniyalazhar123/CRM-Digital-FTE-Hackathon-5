@@ -1,0 +1,332 @@
+# Customer Success FTE Specification
+
+**Version:** 1.0  
+**Date:** March 22, 2026  
+**Status:** Incubation Phase Complete
+
+---
+
+## 1. Purpose
+
+Handle routine customer support queries with speed and consistency across multiple communication channels (Email, WhatsApp, Web Form) while maintaining appropriate tone, escalating when necessary, and tracking all interactions.
+
+---
+
+## 2. Supported Channels
+
+| Channel | Identifier | Response Style | Max Length | Response Time Target |
+|---------|------------|----------------|------------|---------------------|
+| **Email (Gmail)** | Email address | Formal, detailed with greeting/signature | 500 words | \<30 seconds |
+| **WhatsApp** | Phone number | Conversational, concise, emoji-friendly | 300 chars preferred | \<10 seconds |
+| **Web Form** | Email address | Semi-formal, structured | 300 words | \<15 seconds |
+
+---
+
+## 3. Scope
+
+### 3.1 In Scope (AI Handles Directly)
+- ✅ Product feature questions
+- ✅ How-to guidance and tutorials
+- ✅ Bug report intake and triage
+- ✅ Feedback collection
+- ✅ Integration setup guidance
+- ✅ Account management questions
+- ✅ Cross-channel conversation continuity
+
+### 3.2 Out of Scope (Must Escalate)
+- ❌ Pricing negotiations or inquiries
+- ❌ Refund requests
+- ❌ Legal/compliance questions
+- ❌ Angry customers (sentiment \< 0.3)
+- ❌ Explicit human representative requests
+- ❌ Competitor product discussions
+- ❌ Custom enterprise requirements
+
+---
+
+## 4. Tools (MCP Server)
+
+| Tool | Purpose | Input Constraints | Output |
+|------|---------|-------------------|--------|
+| `search_knowledge_base` | Find relevant product documentation | query (str), max_results (int, default 5), category (optional) | Formatted results with relevance scores |
+| `create_ticket` | Log all customer interactions | customer_id, issue, priority, channel (required) | ticket_id (UUID) |
+| `get_customer_history` | Retrieve cross-channel conversation history | customer_id (required) | Last 20 messages across all channels |
+| `escalate_to_human` | Hand off complex/sensitive issues | ticket_id, reason, urgency | escalation_id, confirmation |
+| `send_response` | Reply to customer via appropriate channel | ticket_id, message, channel | delivery_status |
+
+---
+
+## 5. Performance Requirements
+
+| Metric | Target | Measurement Method |
+|--------|--------|-------------------|
+| **Response Time (Processing)** | \<3 seconds | Agent execution time |
+| **Response Time (Delivery)** | \<30 seconds | End-to-end latency |
+| **Accuracy** | \>85% | On test set evaluation |
+| **Escalation Rate** | \<20% | Percentage of tickets escalated |
+| **Cross-Channel ID** | \>95% | Correct customer identification across channels |
+| **Customer Satisfaction** | \>4.0/5.0 | Post-resolution surveys |
+
+---
+
+## 6. Guardrails (Hard Constraints)
+
+### 6.1 Never Violate
+- **NEVER** discuss pricing or provide cost estimates → escalate immediately
+- **NEVER** promise features not documented in knowledge base
+- **NEVER** process refunds or billing adjustments → escalate to billing team
+- **NEVER** share internal processes, system architecture, or API details beyond public docs
+- **NEVER** respond without using `send_response` tool (ensures proper channel formatting)
+- **NEVER** exceed response length limits per channel
+
+### 6.2 Always Do
+- **ALWAYS** create ticket before responding (required for tracking)
+- **ALWAYS** check customer history across all channels before responding
+- **ALWAYS** check sentiment before closing ticket
+- **ALWAYS** use channel-appropriate tone and formatting
+- **ALWAYS** include ticket reference in responses
+
+---
+
+## 7. Escalation Rules
+
+### 7.1 Automatic Escalation Triggers
+
+| Trigger Category | Keywords/Patterns | Escalation Reason Code |
+|-----------------|-------------------|----------------------|
+| **Legal Threats** | "lawyer", "attorney", "sue", "lawsuit", "legal action" | `legal_threat` |
+| **Pricing Inquiries** | "how much", "pricing", "cost", "enterprise plan", "discount" | `pricing_inquiry` |
+| **Refund Requests** | "refund", "money back", "cancel subscription", "billing issue" | `refund_request` |
+| **Human Request** | "speak to human", "real person", "agent", "manager" | `human_requested` |
+| **Negative Sentiment** | Sentiment score \< 0.3 | `negative_sentiment` |
+| **No Information Found** | 2+ failed knowledge base searches | `no_relevant_info` |
+
+### 7.2 Escalation Workflow
+```
+1. Create ticket (ALWAYS first)
+2. Detect escalation trigger
+3. Call escalate_to_human(ticket_id, reason, urgency)
+4. Send appropriate escalation message to customer
+5. Mark ticket as escalated in system
+```
+
+---
+
+## 8. Response Templates by Channel
+
+### 8.1 Email (Formal)
+```
+Dear [Customer Name],
+
+Thank you for reaching out to TechCorp Support.
+
+[Detailed response - 200-500 words with step-by-step guidance]
+
+If you have any further questions, please don't hesitate to reply to this email.
+
+Best regards,
+TechCorp AI Support Team
+---
+Ticket Reference: {ticket_id}
+This response was generated by our AI assistant. For complex issues, you can request human support.
+```
+
+### 8.2 WhatsApp (Concise)
+```
+[Direct answer - max 300 chars]
+
+📱 Reply for more help or type 'human' for live support.
+```
+
+### 8.3 Web Form (Semi-Formal)
+```
+[Helpful response - 100-300 words]
+
+---
+Need more help? Reply to this message or visit our support portal. (Ticket: {ticket_id})
+```
+
+---
+
+## 9. Required Workflow (Execution Order)
+
+The agent **MUST** follow this exact order for EVERY interaction:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 1: Get or Create Customer                              │
+│ - Identify by email or phone                                │
+│ - Load existing customer record if found                    │
+│ - Create new record if first-time customer                  │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 2: Analyze Sentiment                                   │
+│ - Calculate sentiment score (0-1)                           │
+│ - Detect urgency indicators                                 │
+│ - Flag for potential escalation                             │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 3: Check Escalation Triggers                           │
+│ - Legal threats → escalate                                  │
+│ - Pricing/refund → escalate                                 │
+│ - Human request → escalate                                  │
+│ - Negative sentiment (<0.3) → escalate                      │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 4: Create Ticket                                       │
+│ - Generate unique ticket ID                                 │
+│ - Include channel metadata                                  │
+│ - Assign priority based on sentiment/urgency                │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 5: Get Customer History                                │
+│ - Load last 20 messages across ALL channels                 │
+│ - Identify if this is continuation of prior conversation    │
+│ - Note any channel switches                                 │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 6: Search Knowledge Base                               │
+│ - Use semantic search with query                            │
+│ - Return top 3-5 relevant results                           │
+│ - If no results after 2 searches → escalate                 │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 7: Generate Response                                   │
+│ - If escalation needed → use escalation template            │
+│ - If normal → generate answer from search results           │
+│ - Ensure accuracy (only facts from knowledge base)          │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 8: Format for Channel                                  │
+│ - Email: formal, greeting/signature, detailed               │
+│ - WhatsApp: concise, conversational, emoji-friendly         │
+│ - Web Form: semi-formal, structured                         │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 9: Send Response                                       │
+│ - Call send_response tool (REQUIRED)                        │
+│ - Store in ticket conversation                              │
+│ - Track delivery status                                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 10. Data Model
+
+### 10.1 Customer Schema
+```json
+{
+  "id": "cust_001",
+  "email": "user@example.com",
+  "phone": "+14155551234",
+  "name": "John Doe",
+  "created_at": "2026-03-22T10:00:00Z",
+  "plan": "Pro",
+  "metadata": {}
+}
+```
+
+### 10.2 Ticket Schema
+```json
+{
+  "id": "TKT-00001",
+  "customer_id": "cust_001",
+  "issue": "How do I add team members?",
+  "priority": "medium",
+  "channel": "email",
+  "status": "open",
+  "created_at": "2026-03-22T10:00:00Z",
+  "messages": [],
+  "escalated": false,
+  "escalation_reason": null
+}
+```
+
+### 10.3 Message Schema
+```json
+{
+  "role": "customer",
+  "content": "How do I add team members?",
+  "channel": "email",
+  "timestamp": "2026-03-22T10:00:00Z"
+}
+```
+
+---
+
+## 11. Edge Cases & Handling
+
+| Edge Case | Detection | Handling Strategy |
+|-----------|-----------|-------------------|
+| **Empty Message** | content.length \< 5 | Ask for clarification politely |
+| **Multi-Question** | Multiple question marks or "and" connectors | Address each systematically, number responses |
+| **Follow-up Without Context** | Short message, returning customer | Load history, reference prior topic |
+| **Channel Switching** | Same customer, different channel | Acknowledge prior conversation, maintain continuity |
+| **Non-English** | Language detection | Respond in same language or escalate |
+| **Attachments/Media** | has_attachment flag | Acknowledge, ask for description if needed |
+| **Competitor Mention** | Competitor names in message | Never discuss, redirect to our features |
+| **Ambiguous References** | "it", "this", "that" without clear antecedent | Ask clarifying question |
+
+---
+
+## 12. Test Dataset Summary
+
+**Source:** `context/sample-tickets.json`
+
+| Metric | Count |
+|--------|-------|
+| **Total Tickets** | 28 |
+| **By Channel** | Email: 10, WhatsApp: 11, Web Form: 7 |
+| **By Category** | how_to: 4, bug_report: 5, pricing: 5, feedback: 3, technical: 4, product_question: 4, integration: 2, follow_up: 2, escalation_request: 1 |
+| **Escalation Required** | 8 (29%) |
+| **Sentiment Distribution** | Positive: 6, Neutral: 14, Negative: 8 |
+
+---
+
+## 13. Prototype Results
+
+**Test Run:** 5 sample tickets processed
+
+| Ticket | Channel | Category | Result | Sentiment |
+|--------|---------|----------|--------|-----------|
+| 1 | Email | How-to | ✅ Handled by AI | 1.0 (positive) |
+| 2 | WhatsApp | How-to | ✅ Handled by AI | 0.5 (neutral) |
+| 3 | Email | Pricing | ⚠️ Escalated | 1.0 (positive) |
+| 4 | WhatsApp | Human Request | ⚠️ Escalated | 0.5 (neutral) |
+| 5 | Web Form | How-to | ✅ Handled by AI | 0.5 (neutral) |
+
+**Escalation Rate:** 40% (2/5) - Higher than target due to small sample including escalation cases  
+**Average Response Length:** Email: 1041 chars, WhatsApp: 357 chars, Web: 802 chars
+
+---
+
+## 14. Next Steps (Specialization Phase)
+
+### 14.1 Infrastructure to Build
+- [ ] PostgreSQL database with pgvector for semantic search
+- [ ] Kafka event streaming for multi-channel intake
+- [ ] OpenAI Agents SDK implementation
+- [ ] FastAPI service with channel endpoints
+- [ ] Gmail API integration
+- [ ] Twilio/WhatsApp integration
+- [ ] Kubernetes deployment manifests
+
+### 14.2 Enhancements Needed
+- Replace simple string matching with vector similarity search
+- Add proper authentication for channel webhooks
+- Implement conversation continuity across 24-hour windows
+- Add metrics collection and reporting
+- Build React web support form component
+
+---
+
+*End of Specification Document*

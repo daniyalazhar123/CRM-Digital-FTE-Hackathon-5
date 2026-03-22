@@ -1,0 +1,105 @@
+# =============================================================================
+# CRM Digital FTE - Git Ignore File
+# =============================================================================
+
+# Environment variables (NEVER commit credentials)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Logs
+*.log
+logs/
+
+# Database (SQLite)
+*.db
+*.sqlite
+*.sqlite3
+
+# Node (if using web form with Node)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Kubernetes secrets (use sealed-secrets or external secrets manager)
+*-secret.yaml
+*-secrets.yaml
+!k8s/namespace.yaml
+!k8s/configmap.yaml
+!k8s/deployment-*.yaml
+!k8s/service.yaml
+!k8s/hpa.yaml
+!k8s/ingress.yaml
+
+# Test data with real credentials
+test-data/real-*.json
+*.key
+*.pem
+*.crt
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak

@@ -1,0 +1,347 @@
+{
+  "tickets": [
+    {
+      "id": "email-001",
+      "channel": "email",
+      "customer_email": "sarah.johnson@techstartup.io",
+      "customer_name": "Sarah Johnson",
+      "subject": "Question about team permissions",
+      "content": "Hi TechCorp Support,\n\nI'm the admin of our team workspace and I'm trying to figure out how to set different permission levels for team members. We have some contractors who should only see specific projects, not everything.\n\nCan you help me understand:\n1. How do I create custom permission levels?\n2. Can I restrict access to specific boards only?\n3. Is there a way to see who accessed what?\n\nThanks in advance!\n\nBest,\nSarah",
+      "sentiment": 0.7,
+      "category": "how_to",
+      "received_at": "2026-03-20T09:15:00Z"
+    },
+    {
+      "id": "email-002",
+      "channel": "email",
+      "customer_email": "mike.chen@globalcorp.com",
+      "customer_name": "Mike Chen",
+      "subject": "Integration with GitHub not working",
+      "content": "Hello,\n\nWe purchased the Business plan specifically for the GitHub integration feature. However, when I try to connect our GitHub organization, I keep getting an error: 'Authorization failed - please check your permissions'.\n\nI've already:\n- Reconnected the integration 3 times\n- Made sure I'm admin on both TechCorp and GitHub\n- Cleared browser cache\n\nThis is blocking our entire workflow. Please help urgently.\n\nRegards,\nMike Chen\nCTO, GlobalCorp",
+      "sentiment": 0.35,
+      "category": "bug_report",
+      "received_at": "2026-03-20T11:30:00Z"
+    },
+    {
+      "id": "email-003",
+      "channel": "email",
+      "customer_email": "pricing@acmeindustries.com",
+      "customer_name": "David Park",
+      "subject": "Enterprise pricing inquiry",
+      "content": "Dear TechCorp Team,\n\nWe are a company of 500+ employees and are evaluating your platform for organization-wide deployment.\n\nCould you please provide:\n1. Enterprise pricing details\n2. Volume discounts for annual commitment\n3. SLA guarantees\n4. Dedicated support options\n\nWe're also looking at Asana and Monday.com, so competitive pricing would be appreciated.\n\nBest regards,\nDavid Park\nVP of Operations, Acme Industries",
+      "sentiment": 0.5,
+      "category": "pricing",
+      "escalate": true,
+      "received_at": "2026-03-20T14:00:00Z"
+    },
+    {
+      "id": "email-004",
+      "channel": "email",
+      "customer_email": "emma.wilson@designstudio.co",
+      "customer_name": "Emma Wilson",
+      "subject": "Feature request: Dark mode please!",
+      "content": "Hi there!\n\nLove your product! We've been using TechCorp for 6 months and it's transformed how our design team collaborates.\n\nOne request: Any chance of getting a dark mode soon? My eyes hurt after long design sessions 😅\n\nAlso, the AI summarization feature is incredible - saved me hours every week!\n\nKeep up the great work!\n\nEmma",
+      "sentiment": 0.85,
+      "category": "feedback",
+      "received_at": "2026-03-21T08:45:00Z"
+    },
+    {
+      "id": "email-005",
+      "channel": "email",
+      "customer_email": "refund@angrycustomer.net",
+      "customer_name": "Robert Thompson",
+      "subject": "DEMAND FULL REFUND - Your product is broken",
+      "content": "THIS IS UNACCEPTABLE!\n\nI've been charged $228 for the annual Business plan and YOUR PRODUCT DOESN'T EVEN WORK HALF THE TIME!\n\nThe AI summaries are WRONG, the integrations CRASH constantly, and I've LOST IMPORTANT DATA because of your bugs.\n\nI want a FULL REFUND immediately or I'm taking legal action. This is false advertising and I've wasted countless hours on this garbage.\n\nFIX THIS OR I'M SUEING.\n\nRobert Thompson",
+      "sentiment": 0.1,
+      "category": "refund",
+      "escalate": true,
+      "received_at": "2026-03-21T10:00:00Z"
+    },
+    {
+      "id": "email-006",
+      "channel": "email",
+      "customer_email": "lisa.martinez@nonprofitorg.org",
+      "customer_name": "Lisa Martinez",
+      "subject": "Non-profit discount availability?",
+      "content": "Hello TechCorp Team,\n\nI run a small non-profit organization and we're interested in using your platform for our volunteer coordination.\n\nDo you offer any discounts for registered 501(c)(3) organizations? We have about 25 volunteers who would need access.\n\nThank you!\nLisa",
+      "sentiment": 0.6,
+      "category": "pricing",
+      "escalate": true,
+      "received_at": "2026-03-21T13:20:00Z"
+    },
+    {
+      "id": "email-007",
+      "channel": "email",
+      "customer_email": "james.kim@softwaredev.io",
+      "customer_name": "James Kim",
+      "subject": "API rate limits documentation",
+      "content": "Hi Support,\n\nI'm building a custom integration using your REST API but I can't find clear documentation on rate limits.\n\nWhat are the current rate limits for:\n- API calls per minute\n- Webhook deliveries\n- Bulk operations\n\nAlso, is there a way to request higher limits for enterprise customers?\n\nThanks,\nJames Kim\nSenior Developer",
+      "sentiment": 0.55,
+      "category": "technical",
+      "received_at": "2026-03-21T15:45:00Z"
+    },
+    {
+      "id": "email-008",
+      "channel": "email",
+      "customer_email": "anna.kowalski@retailchain.com",
+      "customer_name": "Anna Kowalski",
+      "subject": "Re: Previous ticket #45892 - Still unresolved",
+      "content": "Hi,\n\nI'm following up on my previous ticket about the Google Drive sync issue. It's been 5 days and the problem persists.\n\nOur team of 50 people cannot access shared documents reliably. This is affecting our daily operations.\n\nCan someone please provide:\n1. A status update\n2. Expected resolution time\n3. Workaround if available\n\nThis is becoming critical.\n\nAnna Kowalski\nIT Director",
+      "sentiment": 0.25,
+      "category": "follow_up",
+      "escalate": true,
+      "received_at": "2026-03-22T09:00:00Z"
+    },
+    {
+      "id": "email-009",
+      "channel": "email",
+      "customer_email": "tom.anderson@freelance.com",
+      "customer_name": "Tom Anderson",
+      "subject": "How to export all my data?",
+      "content": "Hello,\n\nI'm considering switching to another platform and need to know: how do I export all my data from TechCorp?\n\nSpecifically:\n- All my tasks and boards\n- Documents and wiki pages\n- Comments and attachments\n\nIs there a bulk export feature? What formats are supported?\n\nThanks,\nTom",
+      "sentiment": 0.45,
+      "category": "how_to",
+      "received_at": "2026-03-22T11:30:00Z"
+    },
+    {
+      "id": "email-010",
+      "channel": "email",
+      "customer_email": "support.team@happycustomer.co",
+      "customer_name": "Jennifer Lee",
+      "subject": "Thank you for the excellent support!",
+      "content": "Hi TechCorp!\n\nJust wanted to say thank you to your support team. Had an issue last week with workspace permissions and it was resolved within hours.\n\nThe step-by-step guide your agent provided was clear and worked perfectly. This is why we love TechCorp!\n\nKeep doing what you're doing! 🎉\n\nBest,\nJennifer Lee\nCOO, HappyCustomer Co",
+      "sentiment": 0.95,
+      "category": "feedback",
+      "received_at": "2026-03-22T14:00:00Z"
+    },
+    {
+      "id": "whatsapp-001",
+      "channel": "whatsapp",
+      "customer_phone": "+14155551234",
+      "customer_name": "Alex Rivera",
+      "content": "Hey! Quick question - how do I add someone to my workspace? 🤔",
+      "sentiment": 0.6,
+      "category": "how_to",
+      "received_at": "2026-03-20T10:30:00Z"
+    },
+    {
+      "id": "whatsapp-002",
+      "channel": "whatsapp",
+      "customer_phone": "+14155551234",
+      "customer_name": "Alex Rivera",
+      "content": "Thanks! Got it 👍",
+      "sentiment": 0.8,
+      "category": "follow_up",
+      "is_follow_up": true,
+      "previous_ticket_id": "whatsapp-001",
+      "received_at": "2026-03-20T10:35:00Z"
+    },
+    {
+      "id": "whatsapp-003",
+      "channel": "whatsapp",
+      "customer_phone": "+447911123456",
+      "customer_name": "Priya Patel",
+      "content": "Is the AI summary feature available on the free plan?",
+      "sentiment": 0.5,
+      "category": "product_question",
+      "received_at": "2026-03-20T12:15:00Z"
+    },
+    {
+      "id": "whatsapp-004",
+      "channel": "whatsapp",
+      "customer_phone": "+14155559876",
+      "customer_name": "Marcus Johnson",
+      "content": "My app keeps crashing when I try to upload files 😤",
+      "sentiment": 0.25,
+      "category": "bug_report",
+      "received_at": "2026-03-20T14:45:00Z"
+    },
+    {
+      "id": "whatsapp-005",
+      "channel": "whatsapp",
+      "customer_phone": "+14155552468",
+      "customer_name": "Sophie Chen",
+      "content": "Can I integrate with Notion?",
+      "sentiment": 0.5,
+      "category": "integration",
+      "received_at": "2026-03-21T09:00:00Z"
+    },
+    {
+      "id": "whatsapp-006",
+      "channel": "whatsapp",
+      "customer_phone": "+14155552468",
+      "customer_name": "Sophie Chen",
+      "content": "What about Slack? I saw Slack integration mentioned but can't find it in settings",
+      "sentiment": 0.45,
+      "category": "integration",
+      "is_follow_up": true,
+      "previous_ticket_id": "whatsapp-005",
+      "received_at": "2026-03-21T09:02:00Z"
+    },
+    {
+      "id": "whatsapp-007",
+      "channel": "whatsapp",
+      "customer_phone": "+33612345678",
+      "customer_name": "Pierre Dubois",
+      "content": "Bonjour! Is TechCorp available in French? 🇫🇷",
+      "sentiment": 0.6,
+      "category": "product_question",
+      "received_at": "2026-03-21T11:30:00Z"
+    },
+    {
+      "id": "whatsapp-008",
+      "channel": "whatsapp",
+      "customer_phone": "+14155558642",
+      "customer_name": "Rachel Green",
+      "content": "I need to speak to a human please",
+      "sentiment": 0.3,
+      "category": "escalation_request",
+      "escalate": true,
+      "received_at": "2026-03-21T16:00:00Z"
+    },
+    {
+      "id": "whatsapp-009",
+      "channel": "whatsapp",
+      "customer_phone": "+14155553691",
+      "customer_name": "Kevin O'Brien",
+      "content": "How much for 100 users?",
+      "sentiment": 0.5,
+      "category": "pricing",
+      "escalate": true,
+      "received_at": "2026-03-22T08:30:00Z"
+    },
+    {
+      "id": "whatsapp-010",
+      "channel": "whatsapp",
+      "customer_phone": "+14155557412",
+      "customer_name": "Nina Kowalczyk",
+      "content": "Love the new update! The dark theme is exactly what I needed 🎨✨",
+      "sentiment": 0.9,
+      "category": "feedback",
+      "received_at": "2026-03-22T12:00:00Z"
+    },
+    {
+      "id": "whatsapp-011",
+      "channel": "whatsapp",
+      "customer_phone": "+14155551234",
+      "customer_name": "Alex Rivera",
+      "content": "Hey, I'm back. So I added the person but now they can't see the board. Help?",
+      "sentiment": 0.4,
+      "category": "bug_report",
+      "is_follow_up": true,
+      "previous_ticket_id": "whatsapp-001",
+      "received_at": "2026-03-22T15:30:00Z"
+    },
+    {
+      "id": "webform-001",
+      "channel": "web_form",
+      "customer_email": "carlos.rivera@techfirm.com",
+      "customer_name": "Carlos Rivera",
+      "subject": "Kanban board customization options",
+      "content": "Hi, I'm trying to customize our Kanban boards to match our workflow. Can I create custom column types beyond the default To Do / In Progress / Done? Also, can I add custom fields to tasks?",
+      "category": "how_to",
+      "priority": "medium",
+      "sentiment": 0.55,
+      "received_at": "2026-03-20T08:00:00Z"
+    },
+    {
+      "id": "webform-002",
+      "channel": "web_form",
+      "customer_email": "diana.prince@startuplab.io",
+      "customer_name": "Diana Prince",
+      "subject": "Cannot login after password reset",
+      "content": "I requested a password reset 2 hours ago and still haven't received the email. I've checked spam folder. My email is diana.prince@startuplab.io. This is urgent as I have a presentation in 30 minutes!",
+      "category": "bug_report",
+      "priority": "high",
+      "sentiment": 0.3,
+      "received_at": "2026-03-20T13:30:00Z"
+    },
+    {
+      "id": "webform-003",
+      "channel": "web_form",
+      "customer_email": "frank.miller@enterprise.co",
+      "customer_name": "Frank Miller",
+      "subject": "SSO integration for enterprise",
+      "content": "We need to set up Single Sign-On (SSO) with our Azure AD. Is this available on the Business plan or do we need Enterprise? What's the setup process?",
+      "category": "technical",
+      "priority": "medium",
+      "sentiment": 0.5,
+      "received_at": "2026-03-21T10:15:00Z"
+    },
+    {
+      "id": "webform-004",
+      "channel": "web_form",
+      "customer_email": "grace.hopper@coderschool.edu",
+      "customer_name": "Grace Hopper",
+      "subject": "Student/Educator discount program",
+      "content": "I'm a computer science teacher and would like to use TechCorp for my class projects. Do you offer educational discounts? We have about 40 students per semester.",
+      "category": "pricing",
+      "priority": "low",
+      "sentiment": 0.6,
+      "escalate": true,
+      "received_at": "2026-03-21T14:00:00Z"
+    },
+    {
+      "id": "webform-005",
+      "channel": "web_form",
+      "customer_email": "henry.ford@autoinnovate.com",
+      "customer_name": "Henry Ford",
+      "subject": "Mobile app offline mode",
+      "content": "Does the mobile app support offline mode? Our field teams often work in areas with poor connectivity. They need to be able to view and update tasks offline, with sync when connection is restored.",
+      "category": "product_question",
+      "priority": "medium",
+      "sentiment": 0.5,
+      "received_at": "2026-03-22T07:45:00Z"
+    },
+    {
+      "id": "webform-006",
+      "channel": "web_form",
+      "customer_email": "iris.chang@designco.studio",
+      "customer_name": "Iris Chang",
+      "subject": "Attachment storage limits",
+      "content": "What are the file attachment limits per plan? We're a design team and regularly upload large PSD and AI files. Will we run into storage issues on the Pro plan?",
+      "category": "product_question",
+      "priority": "medium",
+      "sentiment": 0.5,
+      "received_at": "2026-03-22T10:30:00Z"
+    },
+    {
+      "id": "webform-007",
+      "channel": "web_form",
+      "customer_email": "jack.ryan@securityfirst.gov",
+      "customer_name": "Jack Ryan",
+      "subject": "Security compliance certifications",
+      "content": "Our organization requires vendors to have SOC 2 Type II and ISO 27001 certifications. Does TechCorp have these? Also, is data encrypted at rest and in transit?",
+      "category": "technical",
+      "priority": "high",
+      "sentiment": 0.5,
+      "received_at": "2026-03-22T13:00:00Z"
+    }
+  ],
+  "metadata": {
+    "total_tickets": 28,
+    "by_channel": {
+      "email": 10,
+      "whatsapp": 11,
+      "web_form": 7
+    },
+    "by_category": {
+      "how_to": 4,
+      "bug_report": 5,
+      "pricing": 5,
+      "feedback": 3,
+      "technical": 4,
+      "product_question": 4,
+      "integration": 2,
+      "follow_up": 2,
+      "escalation_request": 1
+    },
+    "escalation_required": 8,
+    "sentiment_distribution": {
+      "positive (>0.7)": 6,
+      "neutral (0.4-0.7)": 14,
+      "negative (<0.4)": 8
+    },
+    "generated_at": "2026-03-22T16:00:00Z"
+  }
+}

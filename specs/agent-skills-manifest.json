@@ -1,0 +1,805 @@
+{
+  "manifest_version": "1.0",
+  "manifest_date": "2026-03-22",
+  "agent_name": "Customer Success FTE",
+  "agent_version": "1.0-incubation",
+  "description": "AI-powered customer support agent handling routine queries across Email, WhatsApp, and Web Form channels",
+  
+  "channel_constraints": {
+    "email": {
+      "max_words": 500,
+      "max_characters": 3000,
+      "style": "formal",
+      "requires_greeting": true,
+      "requires_signature": true,
+      "tone": "professional, empathetic, detailed"
+    },
+    "whatsapp": {
+      "max_words": 50,
+      "max_characters": 300,
+      "preferred_characters": 160,
+      "style": "casual",
+      "requires_greeting": false,
+      "requires_signature": false,
+      "tone": "conversational, concise, friendly",
+      "emojis_allowed": true
+    },
+    "web_form": {
+      "max_words": 300,
+      "max_characters": 1800,
+      "style": "semi-formal",
+      "requires_greeting": true,
+      "requires_signature": false,
+      "tone": "helpful, clear, structured"
+    }
+  },
+
+  "hard_constraints": [
+    {
+      "id": "HC-001",
+      "rule": "NEVER discuss pricing or provide cost estimates",
+      "action": "escalate immediately with reason 'pricing_inquiry'",
+      "severity": "critical"
+    },
+    {
+      "id": "HC-002",
+      "rule": "NEVER promise features not documented in knowledge base",
+      "action": "respond only with documented information",
+      "severity": "critical"
+    },
+    {
+      "id": "HC-003",
+      "rule": "NEVER process refunds or billing adjustments",
+      "action": "escalate with reason 'refund_request'",
+      "severity": "critical"
+    },
+    {
+      "id": "HC-004",
+      "rule": "NEVER share internal processes, system architecture, or API details beyond public docs",
+      "action": "redirect to public documentation",
+      "severity": "high"
+    },
+    {
+      "id": "HC-005",
+      "rule": "NEVER respond without using send_response tool",
+      "action": "always call send_response to ensure proper channel formatting",
+      "severity": "high"
+    },
+    {
+      "id": "HC-006",
+      "rule": "NEVER exceed response length limits per channel",
+      "action": "truncate or summarize to fit constraints",
+      "severity": "medium"
+    },
+    {
+      "id": "HC-007",
+      "rule": "ALWAYS create ticket before responding",
+      "action": "call create_ticket as first step",
+      "severity": "high"
+    },
+    {
+      "id": "HC-008",
+      "rule": "ALWAYS check customer history across all channels before responding",
+      "action": "call get_customer_history to understand context",
+      "severity": "medium"
+    },
+    {
+      "id": "HC-009",
+      "rule": "ALWAYS check sentiment before closing ticket",
+      "action": "verify sentiment >= 0.4 or escalate",
+      "severity": "medium"
+    },
+    {
+      "id": "HC-010",
+      "rule": "ALWAYS use channel-appropriate tone and formatting",
+      "action": "apply channel_constraints to all responses",
+      "severity": "medium"
+    }
+  ],
+
+  "escalation_triggers": [
+    {
+      "id": "ET-001",
+      "trigger": "legal_threat",
+      "keywords": ["lawyer", "attorney", "sue", "lawsuit", "legal action", "court"],
+      "action": "escalate immediately",
+      "message_template": "I understand this is a serious matter. Let me connect you with our specialist team."
+    },
+    {
+      "id": "ET-002",
+      "trigger": "pricing_inquiry",
+      "keywords": ["how much", "pricing", "cost", "price", "enterprise plan", "discount"],
+      "action": "escalate to sales team",
+      "message_template": "Our sales team can provide accurate pricing for your needs."
+    },
+    {
+      "id": "ET-003",
+      "trigger": "refund_request",
+      "keywords": ["refund", "money back", "cancel subscription", "billing issue"],
+      "action": "escalate to billing team",
+      "message_template": "Let me connect you with our billing team."
+    },
+    {
+      "id": "ET-004",
+      "trigger": "human_requested",
+      "keywords": ["speak to human", "real person", "agent", "manager", "supervisor"],
+      "action": "escalate to human agent",
+      "message_template": "I'll arrange for a team member to contact you."
+    },
+    {
+      "id": "ET-005",
+      "trigger": "negative_sentiment",
+      "condition": "sentiment_score < 0.3",
+      "action": "escalate with empathy",
+      "message_template": "I apologize for your experience. Let me connect you with a specialist."
+    },
+    {
+      "id": "ET-006",
+      "trigger": "no_relevant_info",
+      "condition": "2+ failed knowledge base searches",
+      "action": "escalate to subject matter expert",
+      "message_template": "Let me connect you with a specialist who has deeper expertise."
+    },
+    {
+      "id": "ET-007",
+      "trigger": "frustrated_customer",
+      "condition": "frustration_flag == true (3+ negative interactions)",
+      "action": "escalate for personal attention",
+      "message_template": "I can see you've had a frustrating experience. Let me connect you with someone."
+    }
+  ],
+
+  "skills": [
+    {
+      "skill_id": "SKILL-001",
+      "name": "answer_product_question",
+      "display_name": "Answer Product Question",
+      "description": "Handle customer questions about product features, how-to guidance, and technical information",
+      "trigger": {
+        "type": "intent_detection",
+        "intents": ["how_to", "feature_question", "technical_help", "troubleshooting"],
+        "condition": "customer asks a question about product functionality or features"
+      },
+      "priority": 1,
+      "workflow": [
+        {
+          "step": 1,
+          "action": "validate_constraints",
+          "check": "Ensure question is not about pricing, refunds, or legal matters"
+        },
+        {
+          "step": 2,
+          "action": "call_tool",
+          "tool": "search_knowledge_base",
+          "input_mapping": {
+            "query": "${customer_message}",
+            "max_results": 5,
+            "category": "${auto_detected_category}"
+          }
+        },
+        {
+          "step": 3,
+          "action": "evaluate_results",
+          "condition": "If results found with score > 5",
+          "on_success": "proceed to step 4",
+          "on_failure": "escalate with reason 'no_relevant_info'"
+        },
+        {
+          "step": 4,
+          "action": "generate_answer",
+          "source": "top search result content",
+          "constraints": "Only use information from knowledge base"
+        },
+        {
+          "step": 5,
+          "action": "apply_channel_formatting",
+          "tool": "send_response",
+          "input_mapping": {
+            "ticket_id": "${current_ticket_id}",
+            "response_text": "${generated_answer}",
+            "channel": "${current_channel}"
+          }
+        }
+      ],
+      "tools_used": ["search_knowledge_base", "send_response"],
+      "input": {
+        "query": {
+          "type": "string",
+          "required": true,
+          "description": "Customer's question or query"
+        },
+        "channel": {
+          "type": "string",
+          "required": true,
+          "enum": ["email", "whatsapp", "web_form"],
+          "description": "Source channel of the message"
+        },
+        "customer_id": {
+          "type": "string",
+          "required": true,
+          "description": "Customer identifier for context lookup"
+        },
+        "ticket_id": {
+          "type": "string",
+          "required": true,
+          "description": "Current ticket ID"
+        }
+      },
+      "output": {
+        "success": {
+          "type": "boolean",
+          "description": "Whether answer was successfully generated"
+        },
+        "response": {
+          "type": "string",
+          "description": "Formatted response sent to customer"
+        },
+        "sources": {
+          "type": "array",
+          "description": "Knowledge base articles used"
+        },
+        "char_count": {
+          "type": "integer",
+          "description": "Character count of response"
+        }
+      },
+      "success_criteria": [
+        "Response answers customer's question accurately",
+        "Response uses only information from knowledge base",
+        "Response adheres to channel constraints",
+        "Customer sentiment remains >= 0.4 after response"
+      ],
+      "fallback": {
+        "condition": "No relevant knowledge base articles found",
+        "action": "escalate_to_human",
+        "reason": "no_relevant_info"
+      }
+    },
+    {
+      "skill_id": "SKILL-002",
+      "name": "create_support_ticket",
+      "display_name": "Create Support Ticket",
+      "description": "Log every customer interaction as a ticket for tracking and continuity",
+      "trigger": {
+        "type": "event",
+        "event": "new_customer_message",
+        "condition": "Every new customer interaction (first message or new topic)"
+      },
+      "priority": 0,
+      "workflow": [
+        {
+          "step": 1,
+          "action": "extract_metadata",
+          "fields": ["customer_id", "message", "channel", "timestamp"]
+        },
+        {
+          "step": 2,
+          "action": "determine_priority",
+          "logic": "If sentiment < 0.4 or escalation detected → 'high', else 'medium'"
+        },
+        {
+          "step": 3,
+          "action": "call_tool",
+          "tool": "create_ticket",
+          "input_mapping": {
+            "customer_id": "${customer_identifier}",
+            "message": "${customer_message}",
+            "channel": "${current_channel}",
+            "priority": "${determined_priority}",
+            "customer_name": "${customer_name}"
+          }
+        },
+        {
+          "step": 4,
+          "action": "store_ticket_id",
+          "purpose": "Use for all subsequent operations in this conversation"
+        }
+      ],
+      "tools_used": ["create_ticket"],
+      "input": {
+        "customer_id": {
+          "type": "string",
+          "required": true,
+          "description": "Customer email or phone number"
+        },
+        "message": {
+          "type": "string",
+          "required": true,
+          "description": "Customer's message or issue"
+        },
+        "channel": {
+          "type": "string",
+          "required": true,
+          "enum": ["email", "whatsapp", "web_form"]
+        },
+        "priority": {
+          "type": "string",
+          "required": false,
+          "enum": ["low", "medium", "high", "critical"],
+          "default": "medium"
+        },
+        "customer_name": {
+          "type": "string",
+          "required": false,
+          "description": "Customer name if available"
+        }
+      },
+      "output": {
+        "ticket_id": {
+          "type": "string",
+          "description": "Generated ticket ID (e.g., TKT-00001)"
+        },
+        "customer_id": {
+          "type": "string",
+          "description": "Internal customer ID"
+        },
+        "status": {
+          "type": "string",
+          "description": "Initial ticket status (always 'open')"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "ISO8601",
+          "description": "Ticket creation timestamp"
+        }
+      },
+      "success_criteria": [
+        "Ticket created with unique ID",
+        "Customer linked to ticket",
+        "Channel metadata recorded",
+        "Message stored in ticket history"
+      ],
+      "notes": "This skill MUST be executed before any other skill for every new interaction"
+    },
+    {
+      "skill_id": "SKILL-003",
+      "name": "escalate_to_human",
+      "display_name": "Escalate to Human",
+      "description": "Hand off complex, sensitive, or restricted issues to human support agents",
+      "trigger": {
+        "type": "conditional",
+        "conditions": [
+          {"type": "keyword_match", "field": "message", "keywords": ["lawyer", "sue", "attorney"]},
+          {"type": "keyword_match", "field": "message", "keywords": ["pricing", "cost", "refund"]},
+          {"type": "keyword_match", "field": "message", "keywords": ["human", "manager", "agent"]},
+          {"type": "threshold", "field": "sentiment_score", "operator": "<", "value": 0.3},
+          {"type": "flag", "field": "frustration_flag", "equals": true}
+        ],
+        "logic": "ANY condition true → trigger escalation"
+      },
+      "priority": 10,
+      "workflow": [
+        {
+          "step": 1,
+          "action": "detect_escalation_reason",
+          "logic": "Match trigger condition to escalation reason code"
+        },
+        {
+          "step": 2,
+          "action": "gather_context",
+          "data": ["conversation_history", "customer_stats", "prior_tickets"]
+        },
+        {
+          "step": 3,
+          "action": "call_tool",
+          "tool": "escalate_ticket",
+          "input_mapping": {
+            "ticket_id": "${current_ticket_id}",
+            "reason": "${detected_reason}",
+            "notes": "${escalation_notes}",
+            "urgency": "${determined_urgency}"
+          }
+        },
+        {
+          "step": 4,
+          "action": "notify_customer",
+          "message_template": "${escalation_message_template}",
+          "tool": "send_response"
+        }
+      ],
+      "tools_used": ["escalate_ticket", "send_response"],
+      "input": {
+        "ticket_id": {
+          "type": "string",
+          "required": true,
+          "description": "Ticket ID to escalate"
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "enum": ["pricing_inquiry", "refund_request", "legal_threat", "negative_sentiment", "human_requested", "no_relevant_info", "frustrated_customer", "technical_issue"]
+        },
+        "notes": {
+          "type": "string",
+          "required": false,
+          "description": "Additional context for human agent"
+        },
+        "urgency": {
+          "type": "string",
+          "required": false,
+          "enum": ["low", "normal", "high", "critical"],
+          "default": "normal"
+        }
+      },
+      "output": {
+        "escalation_id": {
+          "type": "string",
+          "description": "Generated escalation ID (e.g., ESC-FF56A199)"
+        },
+        "ticket_id": {
+          "type": "string",
+          "description": "Original ticket ID"
+        },
+        "status": {
+          "type": "string",
+          "description": "Always 'escalated'"
+        },
+        "escalated_at": {
+          "type": "string",
+          "format": "ISO8601"
+        }
+      },
+      "success_criteria": [
+        "Escalation ID generated",
+        "Ticket status changed to 'escalated'",
+        "Customer notified with appropriate message",
+        "Human agent receives full context"
+      ],
+      "escalation_message_templates": {
+        "pricing_inquiry": "That's a great question about pricing. Our sales team can provide accurate information tailored to your needs. I'm connecting you with them.",
+        "refund_request": "I understand your concern about billing. Let me connect you with our billing team who can assist you.",
+        "legal_threat": "I understand this is a serious matter. I'm escalating this to our specialist team who will review your case promptly.",
+        "negative_sentiment": "I completely understand your frustration. Let me connect you with a specialist who can give this the attention it deserves.",
+        "human_requested": "I understand you'd like to speak with someone directly. I'm arranging for a team member to contact you.",
+        "frustrated_customer": "I can see you've had a frustrating experience. Let me connect you with a specialist for personal attention."
+      }
+    },
+    {
+      "skill_id": "SKILL-004",
+      "name": "send_channel_response",
+      "display_name": "Send Channel Response",
+      "description": "Send formatted response to customer via their channel with appropriate tone and length",
+      "trigger": {
+        "type": "event",
+        "event": "response_ready",
+        "condition": "After answer generated or escalation message prepared"
+      },
+      "priority": 2,
+      "workflow": [
+        {
+          "step": 1,
+          "action": "validate_response_length",
+          "check": "Ensure response fits channel constraints"
+        },
+        {
+          "step": 2,
+          "action": "apply_channel_formatting",
+          "logic": "Add greeting/signature for email, keep concise for WhatsApp, etc."
+        },
+        {
+          "step": 3,
+          "action": "call_tool",
+          "tool": "send_response",
+          "input_mapping": {
+            "ticket_id": "${current_ticket_id}",
+            "response_text": "${formatted_response}",
+            "channel": "${current_channel}"
+          }
+        },
+        {
+          "step": 4,
+          "action": "confirm_delivery",
+          "check": "Verify delivery_status == 'sent'"
+        },
+        {
+          "step": 5,
+          "action": "resolve_ticket",
+          "condition": "If issue resolved and sentiment >= 0.4"
+        }
+      ],
+      "tools_used": ["send_response"],
+      "input": {
+        "ticket_id": {
+          "type": "string",
+          "required": true
+        },
+        "response_text": {
+          "type": "string",
+          "required": true,
+          "description": "Response message content"
+        },
+        "channel": {
+          "type": "string",
+          "required": true,
+          "enum": ["email", "whatsapp", "web_form"]
+        }
+      },
+      "output": {
+        "success": {
+          "type": "boolean"
+        },
+        "ticket_id": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "response_length": {
+          "type": "integer",
+          "description": "Character count of sent response"
+        },
+        "delivery_status": {
+          "type": "string",
+          "enum": ["sent", "delivered", "failed"]
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "ISO8601"
+        }
+      },
+      "success_criteria": [
+        "Response sent successfully",
+        "Response length within channel limits",
+        "Response formatted appropriately for channel",
+        "Delivery confirmed"
+      ],
+      "channel_formatting_rules": {
+        "email": {
+          "greeting": "Dear [Customer Name],",
+          "opening": "Thank you for reaching out to TechCorp Support.",
+          "closing": "If you have any further questions, please don't hesitate to reply.",
+          "signature": "Best regards,\nTechCorp AI Support Team",
+          "ticket_reference": "Ticket Reference: {ticket_id}"
+        },
+        "whatsapp": {
+          "greeting": null,
+          "style": "concise, conversational",
+          "closing": "📱 Reply for more help or type 'human' for live support.",
+          "signature": null,
+          "emoji_friendly": true
+        },
+        "web_form": {
+          "greeting": "Hi [Customer Name],",
+          "opening": null,
+          "closing": "Need more help? Reply to this message or visit our support portal.",
+          "signature": null,
+          "ticket_reference": "Ticket: {ticket_id}"
+        }
+      }
+    },
+    {
+      "skill_id": "SKILL-005",
+      "name": "track_customer_sentiment",
+      "display_name": "Track Customer Sentiment",
+      "description": "Monitor and track customer sentiment over time to detect frustration trends",
+      "trigger": {
+        "type": "event",
+        "event": "message_received",
+        "condition": "Every customer message received"
+      },
+      "priority": 0,
+      "workflow": [
+        {
+          "step": 1,
+          "action": "analyze_sentiment",
+          "method": "Rule-based analysis (positive/negative word counting)"
+        },
+        {
+          "step": 2,
+          "action": "update_sentiment_history",
+          "data": "Add current score to customer's sentiment_history"
+        },
+        {
+          "step": 3,
+          "action": "calculate_trend",
+          "logic": "Compare recent avg vs older avg"
+        },
+        {
+          "step": 4,
+          "action": "check_frustration",
+          "condition": "If 3+ negative interactions in last 5 → set frustration_flag = true"
+        },
+        {
+          "step": 5,
+          "action": "trigger_escalation_if_needed",
+          "condition": "If frustration_flag == true OR sentiment < 0.3",
+          "on_true": "call escalate_to_human skill"
+        }
+      ],
+      "tools_used": ["get_customer_stats"],
+      "input": {
+        "customer_id": {
+          "type": "string",
+          "required": true,
+          "description": "Customer identifier"
+        },
+        "message": {
+          "type": "string",
+          "required": true,
+          "description": "Customer message to analyze"
+        }
+      },
+      "output": {
+        "sentiment_score": {
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "description": "Current sentiment score"
+        },
+        "sentiment_category": {
+          "type": "string",
+          "enum": ["positive", "neutral", "negative"]
+        },
+        "trend": {
+          "type": "string",
+          "enum": ["improving", "stable", "declining", "insufficient_data"]
+        },
+        "frustration_flag": {
+          "type": "boolean",
+          "description": "True if 3+ negative interactions"
+        },
+        "avg_sentiment": {
+          "type": "number",
+          "description": "Average sentiment across all interactions"
+        }
+      },
+      "success_criteria": [
+        "Sentiment accurately calculated",
+        "Trend correctly identified",
+        "Frustration flag set when appropriate",
+        "Escalation triggered if needed"
+      ],
+      "sentiment_thresholds": {
+        "positive": ">= 0.7",
+        "neutral": ">= 0.4 and < 0.7",
+        "negative": "< 0.4",
+        "escalation_required": "< 0.3"
+      }
+    },
+    {
+      "skill_id": "SKILL-006",
+      "name": "retrieve_customer_context",
+      "display_name": "Retrieve Customer Context",
+      "description": "Get complete customer context including history, stats, and cross-channel information",
+      "trigger": {
+        "type": "conditional",
+        "condition": "Customer identified as returning (has prior interactions)"
+      },
+      "priority": 0,
+      "workflow": [
+        {
+          "step": 1,
+          "action": "identify_customer",
+          "method": "Lookup by email or phone"
+        },
+        {
+          "step": 2,
+          "action": "call_tool",
+          "tool": "get_customer_history",
+          "input_mapping": {
+            "customer_identifier": "${customer_id}",
+            "identifier_type": "${id_type}",
+            "limit": 10
+          }
+        },
+        {
+          "step": 3,
+          "action": "call_tool",
+          "tool": "get_customer_stats",
+          "input_mapping": {
+            "customer_identifier": "${customer_id}",
+            "identifier_type": "${id_type}"
+          }
+        },
+        {
+          "step": 4,
+          "action": "detect_cross_channel",
+          "logic": "Check if customer has used multiple channels"
+        },
+        {
+          "step": 5,
+          "action": "generate_greeting",
+          "condition": "If cross-channel detected",
+          "message": "Hi [Name], continuing from our [prior_channel] conversation..."
+        }
+      ],
+      "tools_used": ["get_customer_history", "get_customer_stats"],
+      "input": {
+        "customer_identifier": {
+          "type": "string",
+          "required": true,
+          "description": "Customer email or phone"
+        },
+        "identifier_type": {
+          "type": "string",
+          "required": false,
+          "enum": ["email", "phone"],
+          "default": "email"
+        }
+      },
+      "output": {
+        "customer_id": {
+          "type": "string"
+        },
+        "history": {
+          "type": "array",
+          "description": "Last 10 messages across all channels"
+        },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "total_tickets": "integer",
+            "open_tickets": "integer",
+            "escalated_tickets": "integer",
+            "avg_sentiment": "number",
+            "sentiment_trend": "string"
+          }
+        },
+        "cross_channel_context": {
+          "type": "object",
+          "properties": {
+            "is_returning": "boolean",
+            "prior_channels": "array",
+            "channels_used": "array"
+          }
+        }
+      },
+      "success_criteria": [
+        "Customer correctly identified",
+        "Full history retrieved",
+        "Stats accurately calculated",
+        "Cross-channel context detected",
+        "Personalized greeting generated if returning"
+      ],
+      "cross_channel_greeting_templates": {
+        "email_to_whatsapp": "Hi {name}! Following up from our email conversation about {topic}...",
+        "whatsapp_to_email": "Dear {name}, continuing our WhatsApp discussion about {topic}...",
+        "web_to_any": "Hi {name}, regarding your web form submission about {topic}...",
+        "same_channel": "Welcome back, {name}! I see you previously asked about {topic}..."
+      }
+    }
+  ],
+
+  "skill_execution_order": [
+    {
+      "phase": "intake",
+      "skills": ["create_support_ticket", "track_customer_sentiment", "retrieve_customer_context"],
+      "parallel": true
+    },
+    {
+      "phase": "processing",
+      "skills": ["answer_product_question"],
+      "parallel": false
+    },
+    {
+      "phase": "response",
+      "skills": ["send_channel_response"],
+      "parallel": false
+    },
+    {
+      "phase": "escalation",
+      "skills": ["escalate_to_human"],
+      "condition": "If any escalation trigger detected",
+      "priority": "override"
+    }
+  ],
+
+  "metrics": {
+    "tracked_metrics": [
+      "response_time_ms",
+      "escalation_rate",
+      "resolution_rate",
+      "avg_sentiment_score",
+      "customer_satisfaction",
+      "first_contact_resolution",
+      "cross_channel_continuity_rate"
+    ],
+    "targets": {
+      "response_time_ms": "< 3000",
+      "escalation_rate": "< 20%",
+      "resolution_rate": "> 80%",
+      "avg_sentiment_score": "> 0.6",
+      "first_contact_resolution": "> 70%"
+    }
+  }
+}
