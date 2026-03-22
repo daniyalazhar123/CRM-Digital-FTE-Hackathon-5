@@ -25,6 +25,9 @@ from agent.crm_agent import process_message
 # Import database
 from db.database import CRMDatabase
 
+# Import channel handlers
+from channels.web_form_handler import router as web_form_router
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,6 +53,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include web form router
+app.include_router(web_form_router)
 
 # =============================================================================
 # REQUEST/RESPONSE MODELS

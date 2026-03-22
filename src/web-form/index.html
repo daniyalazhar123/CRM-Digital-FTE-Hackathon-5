@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechCorp Support - Contact Us</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-12 px-4">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+
+        const CATEGORIES = [
+            { value: 'how-to', label: 'How-To Question' },
+            { value: 'technical', label: 'Technical Support' },
+            { value: 'billing', label: 'Billing Inquiry' },
+            { value: 'bug-report', label: 'Bug Report' },
+            { value: 'other', label: 'Other' }
+        ];
+
+        const PRIORITIES = [
+            { value: 'low', label: 'Low' },
+            { value: 'medium', label: 'Medium' },
+            { value: 'high', label: 'High' }
+        ];
+
+        const API_URL = 'http://localhost:8000/support/submit';
+
+        function SupportForm() {
+            const [formData, setFormData] = useState({
+                name: '', email: '', subject: '',
+                category: 'how-to', priority: 'medium', message: ''
+            });
+            const [status, setStatus] = useState('idle');
+            const [ticketId, setTicketId] = useState(null);
+            const [error, setError] = useState(null);
+
+            const handleChange = (e) => {
+                setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError(null);
+
+                if (formData.name.length < 2 || formData.message.length < 10) {
+                    setError('Please fill all required fields');
+                    return;
+                }
+
+                setStatus('submitting');
+
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+
+                    if (!response.ok) throw new Error('Submission failed');
+
+                    const data = await response.json();
+                    setTicketId(data.ticket_id);
+                    setStatus('success');
+                } catch (err) {
+                    setError(err.message);
+                    setStatus('error');
+                }
+            };
+
+            if (status === 'success') {
+                return (
+                    <div class="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md text-center">
+                        <div class="text-green-500 text-5xl mb-4">✓</div>
+                        <h2 class="text-2xl font-bold mb-2">Thank You!</h2>
+                        <p class="text-gray-600 mb-4">Ticket ID: <strong>{ticketId}</strong></p>
+                        <p class="text-gray-500">We'll respond within 5 minutes.</p>
+                        <button onClick={() => setStatus('idle')} class="mt-6 px-6 py-2 bg-blue-600 text-white rounded">
+                            New Request
+                        </button>
+                    </div>
+                );
+            }
+
+            return (
+                <div class="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
+                    <h2 class="text-2xl font-bold mb-4">Contact Support</h2>
+                    {error && <div class="bg-red-50 text-red-700 p-3 rounded mb-4">{error}</div>}
+                    
+                    <form onSubmit={handleSubmit} class="space-y-4">
+                        <input name="name" value={formData.name} onChange={handleChange} placeholder="Your Name *" required
+                            class="w-full px-4 py-2 border rounded-lg" />
+                        <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="Email *" required
+                            class="w-full px-4 py-2 border rounded-lg" />
+                        <input name="subject" value={formData.subject} onChange={handleChange} placeholder="Subject *" required
+                            class="w-full px-4 py-2 border rounded-lg" />
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <select name="category" value={formData.category} onChange={handleChange} class="px-4 py-2 border rounded-lg">
+                                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                            </select>
+                            <select name="priority" value={formData.priority} onChange={handleChange} class="px-4 py-2 border rounded-lg">
+                                {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                            </select>
+                        </div>
+                        
+                        <textarea name="message" value={formData.message} onChange={handleChange} placeholder="Describe your issue *" required rows="5"
+                            class="w-full px-4 py-2 border rounded-lg"></textarea>
+                        
+                        <button type="submit" disabled={status === 'submitting'}
+                            class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
+                            {status === 'submitting' ? 'Submitting...' : 'Submit Request'}
+                        </button>
+                    </form>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<SupportForm />);
+    </script>
+</body>
+</html>
