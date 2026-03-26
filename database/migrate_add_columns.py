@@ -64,10 +64,26 @@ def add_missing_columns_and_tables():
                     UNIQUE(customer_id, identifier_type, identifier_value)
                 )
             """)
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_customer_identifiers_value ON customer_identifiers(identifier_value)")
             print("✓ customer_identifiers table created/verified")
         except Exception as e:
-            print(f"✗ Error creating customer_identifiers: {e}")
+            print(f"Note: customer_identifiers table exists: {e}")
+        
+        # Add email and phone columns if they don't exist
+        print("\nAdding email and phone columns to customer_identifiers...")
+        try:
+            cur.execute("""
+                ALTER TABLE customer_identifiers 
+                ADD COLUMN IF NOT EXISTS email VARCHAR(255)
+            """)
+            cur.execute("""
+                ALTER TABLE customer_identifiers 
+                ADD COLUMN IF NOT EXISTS phone VARCHAR(50)
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_customer_identifiers_email ON customer_identifiers(email)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_customer_identifiers_phone ON customer_identifiers(phone)")
+            print("✓ email and phone columns added/verified")
+        except Exception as e:
+            print(f"Note: columns may already exist: {e}")
         
         conn.commit()
         print("\n✓ Migration completed successfully!")

@@ -245,7 +245,7 @@ def get_customer_context(params: CustomerContextInput) -> str:
         
         # Get history
         history = db.get_customer_history(customer['id'], limit=10)
-        
+
         # Get stats
         stats = db.get_customer_stats(customer['id'])
         
@@ -253,10 +253,20 @@ def get_customer_context(params: CustomerContextInput) -> str:
         serializable_history = []
         for h in history[:5]:
             h_copy = dict(h) if hasattr(h, '__dict__') else h
-            if 'timestamp' in h_copy and hasattr(h_copy.get('timestamp'), '__str__'):
-                h_copy['timestamp'] = str(h_copy['timestamp'])
+            # Convert datetime objects to strings
+            for key, value in h_copy.items():
+                if hasattr(value, 'isoformat'):
+                    h_copy[key] = value.isoformat()
             serializable_history.append(h_copy)
         
+        # Convert stats to serializable format
+        serializable_stats = {}
+        for key, value in stats.items():
+            if hasattr(value, 'isoformat'):
+                serializable_stats[key] = value.isoformat()
+            else:
+                serializable_stats[key] = value
+
         return json.dumps({
             "success": True,
             "customer": {
@@ -265,10 +275,10 @@ def get_customer_context(params: CustomerContextInput) -> str:
                 "name": customer.get('name')
             },
             "history": serializable_history,
-            "stats": stats,
-            "is_returning_customer": stats['total_tickets'] > 0
+            "stats": serializable_stats,
+            "is_returning_customer": serializable_stats.get('total_tickets', 0) > 0
         })
-        
+
     except Exception as e:
         logger.error(f"Get customer context error: {e}")
         return json.dumps({"success": False, "error": str(e)})
