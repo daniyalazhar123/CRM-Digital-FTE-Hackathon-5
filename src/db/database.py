@@ -93,8 +93,23 @@ class DatabasePool:
             print("✓ All database connections closed")
 
 
-# Global pool instance
-db_pool = DatabasePool()
+# =============================================================================
+# LAZY POOL INITIALIZATION
+# =============================================================================
+
+# Global pool instance (initialized lazily)
+_db_pool_instance = None
+
+
+def get_db_pool():
+    """
+    Get or create database pool (lazy initialization).
+    This prevents connection errors at import time.
+    """
+    global _db_pool_instance
+    if _db_pool_instance is None:
+        _db_pool_instance = DatabasePool()
+    return _db_pool_instance
 
 
 # =============================================================================
@@ -103,13 +118,13 @@ db_pool = DatabasePool()
 
 class DatabaseConnection:
     """Context manager for database connections with automatic rollback/commit."""
-    
+
     def __init__(self, autocommit=False):
         self.conn = None
         self.autocommit = autocommit
-    
+
     def __enter__(self):
-        self.conn = db_pool.get_connection()
+        self.conn = get_db_pool().get_connection()
         self.conn.autocommit = self.autocommit
         return self.conn
     
@@ -119,7 +134,7 @@ class DatabaseConnection:
             print(f"✗ Database transaction rolled back: {exc_val}")
         else:
             self.conn.commit()
-        db_pool.release_connection(self.conn)
+        get_db_pool().release_connection(self.conn)
 
 
 # =============================================================================
@@ -491,7 +506,11 @@ class CRMDatabase:
     # -------------------------------------------------------------------------
     # UTILITY METHODS
     # -------------------------------------------------------------------------
-    
+
+    def get_connection(self):
+        """Get a raw database connection for advanced operations."""
+        return get_db_pool().get_connection()
+
     def _generate_uuid(self) -> str:
         """Generate UUID string."""
         import uuid
@@ -504,7 +523,7 @@ class CRMDatabase:
     
     def close(self):
         """Close database connections."""
-        db_pool.close_all()
+        get_db_pool().close_all()
 
 
 # =============================================================================
