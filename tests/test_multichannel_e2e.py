@@ -242,7 +242,7 @@ class TestWebFormChannel:
                 "name": "Test User",
                 "email": test_email,
                 "subject": "Status Test",
-                "category": "general",
+                "category": "how-to",
                 "message": "Testing ticket status retrieval functionality."
             })
 
@@ -548,7 +548,7 @@ class TestCrossChannelContinuity:
                 "name": "Cross Channel User",
                 "email": test_email,
                 "subject": "Initial Contact",
-                "category": "general",
+                "category": "how-to",
                 "message": "First contact via web form"
             })
 
@@ -560,14 +560,13 @@ class TestCrossChannelContinuity:
                 cur.execute("SELECT customer_id FROM tickets WHERE id = %s", (ticket_id_1,))
                 customer_id = cur.fetchone()[0]
 
-                # Link phone to email via customer_identifiers table
+                # Link phone to email by updating customer record
                 cur.execute(
                     """
-                    INSERT INTO customer_identifiers (customer_id, email, phone)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (customer_id) DO UPDATE SET phone = %s
+                    UPDATE customers SET phone = %s
+                    WHERE id = %s
                     """,
-                    (customer_id, test_email, test_phone, test_phone)
+                    (test_phone, customer_id)
                 )
                 db_conn.commit()
 
@@ -698,14 +697,13 @@ class TestCrossChannelContinuity:
                 cur.execute("SELECT customer_id FROM tickets WHERE id = %s", (ticket_1,))
                 customer_id = cur.fetchone()[0]
 
-                # Link identifiers
+                # Link identifiers by updating customer record
                 cur.execute(
                     """
-                    INSERT INTO customer_identifiers (customer_id, email, phone)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (customer_id) DO UPDATE SET phone = %s
+                    UPDATE customers SET phone = %s
+                    WHERE id = %s
                     """,
-                    (customer_id, test_email_addr, test_phone_num, test_phone_num)
+                    (test_phone_num, customer_id)
                 )
                 db_conn.commit()
 
