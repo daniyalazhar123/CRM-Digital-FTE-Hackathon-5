@@ -220,44 +220,43 @@ async def get_ticket_status(ticket_id: str):
 # =============================================================================
 
 @app.post("/webhooks/gmail")
-async def gmail_webhook(request: Request, background_tasks: BackgroundTasks):
+async def gmail_webhook(request: Request):
     """
     Handle Gmail push notifications via Pub/Sub.
-    
-    Processes incoming emails and queues them for agent processing.
+
+    Processes incoming emails and returns ticket_id.
     """
     try:
         body = await request.json()
         logger.info(f"Received Gmail webhook: {body}")
+
+        # Extract sender email and message content
+        from_email = body.get('from', body.get('From', ''))
+        subject = body.get('subject', body.get('Subject', ''))
+        msg_body = body.get('body', body.get('Body', body.get('message', '')))
         
-        # Extract message data from Pub/Sub payload
-        # In production, decode base64 and parse email
-        message_data = {
-            "channel": "email",
-            "content": body.get('message', {}).get('data', ''),
-            "received_at": datetime.utcnow().isoformat()
-        }
+        if not from_email:
+            raise HTTPException(status_code=400, detail="Missing 'from' email address")
         
-        # Process in background
-        background_tasks.add_task(
-            process_gmail_message,
-            message_data
+        # Process synchronously to get ticket_id
+        result = process_message(
+            customer_email=from_email,
+            message=f"{subject}: {msg_body}" if subject else str(msg_body),
+            channel="email"
         )
         
-        return {"status": "processed", "message": "Email queued for processing"}
-        
+        logger.info(f"Gmail processed: {result}")
+
+        return {
+            "status": "processed",
+            "ticket_id": result.get('ticket_id'),
+            "message": result.get('response', 'Your message has been received'),
+            "escalated": result.get('escalated', False)
+        }
+
     except Exception as e:
         logger.error(f"Gmail webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-async def process_gmail_message(message_data: dict):
-    """Process Gmail message in background."""
-    # Parse email content
-    # Extract sender, subject, body
-    # Call process_message()
-    # Send response via Gmail API
-    pass
 
 
 # =============================================================================
@@ -265,34 +264,52 @@ async def process_gmail_message(message_data: dict):
 # =============================================================================
 
 @app.post("/webhooks/whatsapp")
-async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
+async def whatsapp_webhook(request: Request):
     """
     Handle incoming WhatsApp messages via Twilio webhook.
+    Returns ticket_id and response.
     """
     try:
-        form_data = await request.form()
-        logger.info(f"Received WhatsApp message: {form_data}")
+        # Try JSON first (for tests), then form data (for Twilio)
+        phone = None
+        msg_body = None
         
-        # Extract message data
-        message_data = {
-            "from": form_data.get('From', '').replace('whatsapp:', ''),
-            "body": form_data.get('Body', ''),
-            "message_sid": form_data.get('MessageSid'),
-            "profile_name": form_data.get('ProfileName')
+        # Try JSON format
+        try:
+            body = await request.json()
+            phone = body.get('from', body.get('From', ''))
+            msg_body = body.get('body', body.get('Body', body.get('message', '')))
+        except:
+            # Fall back to form data (Twilio format)
+            try:
+                form_data = await request.form()
+                phone = form_data.get('From', '').replace('whatsapp:', '')
+                msg_body = form_data.get('Body', '')
+            except:
+                pass
+        
+        if not phone:
+            raise HTTPException(status_code=400, detail="Missing phone number")
+        
+        logger.info(f"Received WhatsApp message from {phone}: {msg_body}")
+
+        # Process synchronously - use phone as email identifier
+        # process_message expects customer_email, so we use phone as identifier
+        result = process_message(
+            customer_email=phone,  # Use phone as identifier
+            message=msg_body,
+            channel="whatsapp"
+        )
+        
+        logger.info(f"WhatsApp processed: {result}")
+
+        return {
+            "status": "processed",
+            "ticket_id": result.get('ticket_id'),
+            "message": result.get('response', 'Your message has been received'),
+            "escalated": result.get('escalated', False)
         }
-        
-        # Process in background
-        background_tasks.add_task(
-            process_whatsapp_message,
-            message_data
-        )
-        
-        # Return TwiML response (empty = no immediate reply, agent will respond)
-        return PlainTextResponse(
-            '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-            media_type="application/xml"
-        )
-        
+
     except Exception as e:
         logger.error(f"WhatsApp webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -304,23 +321,16 @@ async def whatsapp_status_webhook(request: Request):
     try:
         form_data = await request.form()
         logger.info(f"Received WhatsApp status: {form_data}")
-        
+
         # Update message delivery status in database
         # message_sid = form_data.get('MessageSid')
         # status = form_data.get('MessageStatus')
-        
+
         return {"status": "received"}
-        
+
     except Exception as e:
         logger.error(f"WhatsApp status webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-async def process_whatsapp_message(message_data: dict):
-    """Process WhatsApp message in background."""
-    # Call process_message() with channel="whatsapp"
-    # Send response via Twilio API
-    pass
 
 
 # =============================================================================

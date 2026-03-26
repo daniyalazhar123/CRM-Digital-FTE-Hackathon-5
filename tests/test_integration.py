@@ -124,21 +124,21 @@ class TestMultiChannelFlow:
                 ticket = cur.fetchone()
                 assert ticket is not None
                 assert ticket[3] == 'email'  # channel
-                
-                # Verify sentiment tracked
+
+                # Verify sentiment tracked (use sentiment_score column)
                 cur.execute(
-                    "SELECT sentiment FROM messages WHERE ticket_id = %s ORDER BY created_at DESC LIMIT 1",
+                    "SELECT sentiment_score FROM messages WHERE ticket_id = %s ORDER BY timestamp DESC LIMIT 1",
                     (ticket_id,)
                 )
                 msg = cur.fetchone()
                 assert msg is not None
                 # Sentiment should be a float
                 assert isinstance(msg[0], float) or msg[0] is None
-            
+
             # Verify performance
             elapsed = time.time() - start_time
             assert elapsed < 3000, f"Response time {elapsed}s exceeded 3s limit"
-            
+
         finally:
             cleanup_test_data(db_conn, email=email)
 

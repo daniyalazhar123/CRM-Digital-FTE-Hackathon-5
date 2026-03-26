@@ -30,13 +30,14 @@ DB_CONFIG = {
     'password': os.getenv('DB_PASSWORD', 'postgres123')
 }
 
-# Connection pool settings
-POOL_MIN_CONN = 2
-POOL_MAX_CONN = 10
+# Connection pool settings - Increased for concurrent load
+POOL_MIN_CONN = 5
+POOL_MAX_CONN = 50
 
-# Retry settings
-MAX_RETRIES = 3
-RETRY_DELAY = 1  # seconds
+# Retry settings with exponential backoff
+MAX_RETRIES = 5
+RETRY_DELAY = 0.5  # seconds
+RETRY_BACKOFF_MULTIPLIER = 2.0  # Exponential backoff
 
 
 # =============================================================================
@@ -72,14 +73,25 @@ class DatabasePool:
             raise
     
     def get_connection(self):
-        """Get connection from pool with retry."""
+        """Get connection from pool with retry and exponential backoff."""
+        import time
         for attempt in range(MAX_RETRIES):
             try:
                 return self._pool.getconn()
+            except psycopg2.pool.PoolExhaustedError:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                # Exponential backoff: 0.5s, 1s, 2s, 4s, 8s
+                delay = RETRY_DELAY * (RETRY_BACKOFF_MULTIPLIER ** attempt)
+                print(f"Connection pool exhausted, retrying in {delay}s...")
+                time.sleep(delay)
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
                     raise
-                print(f"Connection attempt {attempt + 1} failed, retrying...")
+                # Exponential backoff for other errors
+                delay = RETRY_DELAY * (RETRY_BACKOFF_MULTIPLIER ** attempt)
+                print(f"Connection attempt {attempt + 1} failed: {e}, retrying in {delay}s...")
+                time.sleep(delay)
     
     def release_connection(self, conn):
         """Release connection back to pool."""
