@@ -273,11 +273,11 @@ class TestMultiChannelFlow:
                 customer_id_1 = cur.fetchone()[0]
             
             # Second interaction via WhatsApp (same customer, different channel)
-            # Link phone to email via customer_identifiers table
+            # Update customer record with phone number for cross-channel tracking
             with db_conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO customer_identifiers (customer_id, email, phone) VALUES (%s, %s, %s) ON CONFLICT (customer_id) DO UPDATE SET phone = %s",
-                    (customer_id_1, email, phone, phone)
+                    "UPDATE customers SET phone = %s WHERE id = %s",
+                    (phone, customer_id_1)
                 )
                 db_conn.commit()
             

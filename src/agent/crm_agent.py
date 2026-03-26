@@ -427,24 +427,53 @@ def track_sentiment(params: TrackSentimentInput) -> str:
 def check_escalation_triggers(message: str, sentiment_score: float = None) -> tuple:
     """
     Check if message triggers escalation.
-    
+
     Returns:
         (should_escalate: bool, reason: str or None)
     """
     message_lower = message.lower()
-    
+
     # Check keyword triggers
     for reason, keywords in ESCALATION_KEYWORDS.items():
         if any(keyword in message_lower for keyword in keywords):
             logger.info(f"Escalation trigger detected: {reason}")
             return True, reason
-    
+
     # Check sentiment
     if sentiment_score is not None and sentiment_score < 0.3:
         logger.info(f"Escalation trigger: negative sentiment ({sentiment_score})")
         return True, "negative_sentiment"
-    
+
     return False, None
+
+
+def detect_escalation(message: str) -> dict:
+    """
+    Wrapper for check_escalation_triggers that returns dict format for tests.
+    
+    Args:
+        message: Customer message to analyze
+        
+    Returns:
+        dict with is_escalation, reason, and message keys
+    """
+    should_escalate, reason = check_escalation_triggers(message)
+    
+    escalation_messages = {
+        "legal_threat": "I understand this is a serious matter. I'm escalating this to our specialist team.",
+        "pricing_inquiry": "That's a great question about pricing. Our sales team can provide accurate information.",
+        "refund_request": "I understand your concern about billing. Let me connect you with our billing team.",
+        "human_requested": "I understand you'd like to speak with someone directly. I'm arranging for a team member.",
+        "negative_sentiment": "I completely understand your frustration. Let me connect you with a specialist.",
+        "no_relevant_info": "Let me connect you with a specialist who has deeper expertise.",
+        "frustrated_customer": "I can see you've had a frustrating experience. Let me connect you with someone."
+    }
+    
+    return {
+        "is_escalation": should_escalate,
+        "reason": reason,
+        "message": escalation_messages.get(reason, "I'm connecting you with a specialist.") if should_escalate else ""
+    }
 
 
 # =============================================================================

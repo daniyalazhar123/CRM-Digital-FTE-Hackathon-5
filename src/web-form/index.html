@@ -3,125 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TechCorp Support - Contact Us</title>
+    <meta name="description" content="TechCorp Customer Support - Get help with your questions">
+    <meta name="theme-color" content="#2563eb">
+    
+    <title>Contact Support | TechCorp</title>
+    
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- React + ReactDOM + Babel CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="SupportForm.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📧</text></svg>">
 </head>
-<body class="bg-gray-100 min-h-screen py-12 px-4">
-    <div id="root"></div>
-
-    <script type="text/babel">
-        const { useState } = React;
-
-        const CATEGORIES = [
-            { value: 'how-to', label: 'How-To Question' },
-            { value: 'technical', label: 'Technical Support' },
-            { value: 'billing', label: 'Billing Inquiry' },
-            { value: 'bug-report', label: 'Bug Report' },
-            { value: 'other', label: 'Other' }
-        ];
-
-        const PRIORITIES = [
-            { value: 'low', label: 'Low' },
-            { value: 'medium', label: 'Medium' },
-            { value: 'high', label: 'High' }
-        ];
-
-        const API_URL = 'http://localhost:8000/support/submit';
-
-        function SupportForm() {
-            const [formData, setFormData] = useState({
-                name: '', email: '', subject: '',
-                category: 'how-to', priority: 'medium', message: ''
-            });
-            const [status, setStatus] = useState('idle');
-            const [ticketId, setTicketId] = useState(null);
-            const [error, setError] = useState(null);
-
-            const handleChange = (e) => {
-                setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-            };
-
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setError(null);
-
-                if (formData.name.length < 2 || formData.message.length < 10) {
-                    setError('Please fill all required fields');
-                    return;
-                }
-
-                setStatus('submitting');
-
-                try {
-                    const response = await fetch(API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(formData)
-                    });
-
-                    if (!response.ok) throw new Error('Submission failed');
-
-                    const data = await response.json();
-                    setTicketId(data.ticket_id);
-                    setStatus('success');
-                } catch (err) {
-                    setError(err.message);
-                    setStatus('error');
-                }
-            };
-
-            if (status === 'success') {
-                return (
-                    <div class="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md text-center">
-                        <div class="text-green-500 text-5xl mb-4">✓</div>
-                        <h2 class="text-2xl font-bold mb-2">Thank You!</h2>
-                        <p class="text-gray-600 mb-4">Ticket ID: <strong>{ticketId}</strong></p>
-                        <p class="text-gray-500">We'll respond within 5 minutes.</p>
-                        <button onClick={() => setStatus('idle')} class="mt-6 px-6 py-2 bg-blue-600 text-white rounded">
-                            New Request
-                        </button>
-                    </div>
-                );
-            }
-
-            return (
-                <div class="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
-                    <h2 class="text-2xl font-bold mb-4">Contact Support</h2>
-                    {error && <div class="bg-red-50 text-red-700 p-3 rounded mb-4">{error}</div>}
-                    
-                    <form onSubmit={handleSubmit} class="space-y-4">
-                        <input name="name" value={formData.name} onChange={handleChange} placeholder="Your Name *" required
-                            class="w-full px-4 py-2 border rounded-lg" />
-                        <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="Email *" required
-                            class="w-full px-4 py-2 border rounded-lg" />
-                        <input name="subject" value={formData.subject} onChange={handleChange} placeholder="Subject *" required
-                            class="w-full px-4 py-2 border rounded-lg" />
-                        
-                        <div class="grid grid-cols-2 gap-4">
-                            <select name="category" value={formData.category} onChange={handleChange} class="px-4 py-2 border rounded-lg">
-                                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                            </select>
-                            <select name="priority" value={formData.priority} onChange={handleChange} class="px-4 py-2 border rounded-lg">
-                                {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                            </select>
-                        </div>
-                        
-                        <textarea name="message" value={formData.message} onChange={handleChange} placeholder="Describe your issue *" required rows="5"
-                            class="w-full px-4 py-2 border rounded-lg"></textarea>
-                        
-                        <button type="submit" disabled={status === 'submitting'}
-                            class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
-                            {status === 'submitting' ? 'Submitting...' : 'Submit Request'}
-                        </button>
-                    </form>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <span class="text-3xl mr-3">🏢</span>
+                    <h1 class="text-2xl font-bold text-gray-900">TechCorp Support</h1>
                 </div>
-            );
-        }
+                <nav class="hidden md:flex space-x-6">
+                    <a href="#" class="text-gray-600 hover:text-gray-900">Home</a>
+                    <a href="#" class="text-gray-600 hover:text-gray-900">Documentation</a>
+                    <a href="#" class="text-gray-600 hover:text-gray-900">Contact</a>
+                </nav>
+            </div>
+        </div>
+    </header>
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<SupportForm />);
-    </script>
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        <!-- Page Title -->
+        <div class="text-center mb-8">
+            <h2 class="text-3xl font-bold text-gray-900 mb-2">We're Here to Help</h2>
+            <p class="text-gray-600">
+                Fill out the form below and our AI-powered support team will respond within minutes.
+            </p>
+        </div>
+
+        <!-- Support Form Mount Point -->
+        <div id="root"></div>
+
+        <!-- Features Section -->
+        <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                <div class="text-4xl mb-3">⚡</div>
+                <h3 class="font-semibold text-gray-900 mb-2">Fast Response</h3>
+                <p class="text-gray-600 text-sm">AI-powered responses within 5 minutes on average</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                <div class="text-4xl mb-3">🔒</div>
+                <h3 class="font-semibold text-gray-900 mb-2">Secure & Private</h3>
+                <p class="text-gray-600 text-sm">Your data is encrypted and never shared</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                <div class="text-4xl mb-3">📱</div>
+                <h3 class="font-semibold text-gray-900 mb-2">Multi-Channel</h3>
+                <p class="text-gray-600 text-sm">Continue conversation via email or WhatsApp</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-12">
+        <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <p class="text-gray-600 text-sm mb-4 md:mb-0">
+                    © 2026 TechCorp. All rights reserved.
+                </p>
+                <div class="flex space-x-6">
+                    <a href="#" class="text-gray-400 hover:text-gray-600 text-sm">Privacy Policy</a>
+                    <a href="#" class="text-gray-400 hover:text-gray-600 text-sm">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Mount React Component -->
+    <script type="text/babel" src="SupportForm.jsx"></script>
 </body>
 </html>
