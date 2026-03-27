@@ -254,7 +254,7 @@ class WhatsAppHandler:
                 'error': str(e)
             }
 
-    def format_response_for_whatsapp(self, response: str, 
+    def format_response_for_whatsapp(self, response: str,
                                       max_length: int = 1600) -> List[str]:
         """
         Format and split response for WhatsApp (max 1600 chars per message).
@@ -283,17 +283,18 @@ class WhatsAppHandler:
 
             # Find a good break point (sentence boundary)
             break_point = remaining.rfind('. ', 0, max_length)
-            
+
             if break_point == -1:
                 # Try space
                 break_point = remaining.rfind(' ', 0, max_length)
-            
+
             if break_point == -1:
                 # No good break point, hard cut
-                break_point = max_length
+                break_point = max_length - 1
 
-            messages.append(remaining[:break_point + 1].strip())
-            remaining = remaining[break_point + 1:].strip()
+            # Ensure we don't exceed max_length
+            messages.append(remaining[:break_point].strip())
+            remaining = remaining[break_point:].strip()
 
         logger.info(f"Split response into {len(messages)} messages")
         return messages

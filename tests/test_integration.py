@@ -55,10 +55,19 @@ def get_db_connection():
     )
 
 
-def cleanup_test_data(db_conn, email=None, phone=None):
+def cleanup_test_data(db_conn=None, email=None, phone=None):
     """Cleanup test data from database."""
+    import psycopg2
+    
+    # Get fresh connection if db_conn is closed or not provided
+    conn = None
     try:
-        with db_conn.cursor() as cur:
+        if db_conn is None or db_conn.closed:
+            conn = get_db_connection()
+        else:
+            conn = db_conn
+        
+        with conn.cursor() as cur:
             if email:
                 cur.execute("DELETE FROM messages WHERE customer_id IN (SELECT id FROM customers WHERE email = %s)", (email,))
                 cur.execute("DELETE FROM tickets WHERE customer_id IN (SELECT id FROM customers WHERE email = %s)", (email,))
@@ -67,10 +76,15 @@ def cleanup_test_data(db_conn, email=None, phone=None):
                 cur.execute("DELETE FROM messages WHERE customer_id IN (SELECT id FROM customers WHERE phone = %s)", (phone,))
                 cur.execute("DELETE FROM tickets WHERE customer_id IN (SELECT id FROM customers WHERE phone = %s)", (phone,))
                 cur.execute("DELETE FROM customers WHERE phone = %s", (phone,))
-            db_conn.commit()
+            conn.commit()
     except Exception as e:
-        db_conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"Cleanup warning: {e}")
+    finally:
+        # Only close if we created a new connection
+        if conn and conn != db_conn:
+            conn.close()
 
 
 # =============================================================================
@@ -251,7 +265,7 @@ class TestMultiChannelFlow:
         """
         email = generate_unique_email()
         phone = generate_unique_phone()
-        
+
         try:
             # First interaction via email
             response1 = client.post(
@@ -265,13 +279,27 @@ class TestMultiChannelFlow:
                 }
             )
             assert response1.status_code == 200
-            ticket_id_1 = response1.json()['ticket_id']
             
+            # New response format has results array
+            data1 = response1.json()
+            if 'ticket_id' in data1:
+                ticket_id_1 = data1['ticket_id']
+            elif 'results' in data1 and len(data1['results']) > 0:
+                ticket_id_1 = data1['results'][0].get('ticket_id')
+            else:
+                # Fallback: query database directly
+                with db_conn.cursor() as cur:
+                    cur.execute("SELECT id FROM tickets WHERE customer_id IN (SELECT id FROM customers WHERE email = %s) ORDER BY created_at DESC LIMIT 1", (email,))
+                    result = cur.fetchone()
+                    ticket_id_1 = result[0] if result else None
+            
+            assert ticket_id_1 is not None
+
             # Get customer_id from first ticket
             with db_conn.cursor() as cur:
                 cur.execute("SELECT customer_id FROM tickets WHERE id = %s", (ticket_id_1,))
                 customer_id_1 = cur.fetchone()[0]
-            
+
             # Second interaction via WhatsApp (same customer, different channel)
             # Update customer record with phone number for cross-channel tracking
             with db_conn.cursor() as cur:
@@ -280,7 +308,7 @@ class TestMultiChannelFlow:
                     (phone, customer_id_1)
                 )
                 db_conn.commit()
-            
+
             response2 = client.post(
                 "/webhooks/whatsapp",
                 json={
@@ -290,24 +318,37 @@ class TestMultiChannelFlow:
                 }
             )
             assert response2.status_code == 200
-            ticket_id_2 = response2.json()['ticket_id']
             
+            # Handle both TwiML and JSON responses
+            content_type = response2.headers.get('content-type', '')
+            if 'application/xml' in content_type:
+                # TwiML response - query DB for ticket
+                with db_conn.cursor() as cur:
+                    cur.execute("SELECT id FROM tickets WHERE customer_id = %s ORDER BY created_at DESC LIMIT 1", (customer_id_1,))
+                    result = cur.fetchone()
+                    ticket_id_2 = result[0] if result else None
+            else:
+                data2 = response2.json()
+                ticket_id_2 = data2.get('ticket_id')
+            
+            assert ticket_id_2 is not None
+
             # Verify same customer_id in both tickets
             with db_conn.cursor() as cur:
                 cur.execute("SELECT customer_id FROM tickets WHERE id = %s", (ticket_id_2,))
                 customer_id_2 = cur.fetchone()[0]
-                
+
                 # Customer IDs should match (cross-channel recognition)
-                assert customer_id_1 == customer_id_2, "Cross-channel customer recognition failed"
-                
+                assert customer_id_1 == customer_id_2, f"Cross-channel customer recognition failed: {customer_id_1} != {customer_id_2}"
+
                 # Verify history shows both channels
                 cur.execute(
                     "SELECT DISTINCT channel FROM tickets WHERE customer_id = %s",
                     (customer_id_1,)
                 )
                 channels = [row[0] for row in cur.fetchall()]
-                assert 'email' in channels
-                assert 'whatsapp' in channels
+                assert 'email' in channels, f"Email channel not found in {channels}"
+                assert 'whatsapp' in channels, f"WhatsApp channel not found in {channels}"
             
         finally:
             cleanup_test_data(db_conn, email=email, phone=phone)

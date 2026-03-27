@@ -71,23 +71,23 @@ class TestWhatsAppHandler:
         """Test response formatting for short messages."""
         from channels.whatsapp_handler import WhatsAppHandler
         handler = WhatsAppHandler()
-        
+
         response = "Short test response"
-        messages = handler.format_response(response)
-        
+        messages = handler.format_response_for_whatsapp(response)
+
         assert isinstance(messages, list)
         assert len(messages) == 1
         assert messages[0] == response
-    
+
     def test_whatsapp_format_response_long(self):
         """Test response formatting for long messages."""
         from channels.whatsapp_handler import WhatsAppHandler
         handler = WhatsAppHandler()
-        
+
         # Create long response (> 1600 chars)
         long_response = "Test. " * 500  # 3000 chars
-        messages = handler.format_response(long_response, max_length=1600)
-        
+        messages = handler.format_response_for_whatsapp(long_response, max_length=1600)
+
         assert isinstance(messages, list)
         assert len(messages) > 1  # Should be split
         assert all(len(msg) <= 1600 for msg in messages)
