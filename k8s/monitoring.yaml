@@ -1,0 +1,236 @@
+# CRM Digital FTE - Prometheus + Grafana Monitoring
+# Feature 5: Production Monitoring Stack
+
+# =============================================================================
+# PROMETHEUS CONFIGMAP
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: crm-fte
+  labels:
+    app: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    scrape_configs:
+      # API service metrics
+      - job_name: 'crm-fte-api'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: crm-fte
+          - source_labels: [__meta_kubernetes_pod_label_component]
+            action: keep
+            regex: api
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+        metrics_path: /metrics
+        static_configs:
+          - targets: ['crm-fte-api.crm-fte.svc.cluster.local:80']
+      
+      # Node exporter (infrastructure metrics)
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: ['node-exporter.monitoring.svc.cluster.local:9100']
+      
+      # Kafka metrics
+      - job_name: 'kafka'
+        static_configs:
+          - targets: ['kafka-exporter.monitoring.svc.cluster.local:9308']
+      
+      # PostgreSQL metrics
+      - job_name: 'postgres'
+        static_configs:
+          - targets: ['postgres-exporter.monitoring.svc.cluster.local:9187']
+      
+      # Redis metrics
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis-exporter.monitoring.svc.cluster.local:9121']
+
+---
+# =============================================================================
+# PROMETHEUS SERVICE MONITOR (for Prometheus Operator)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crm-fte-monitor
+  namespace: crm-fte
+  labels:
+    app: crm-fte
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: crm-fte
+      component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - crm-fte
+
+---
+# =============================================================================
+# GRAFANA DASHBOARD CONFIGMAP
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-crm-fte
+  namespace: crm-fte
+  labels:
+    grafana_dashboard: "1"
+data:
+  crm-fte-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "CRM Digital FTE Dashboard",
+        "tags": ["crm", "fte", "hackathon-5"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(api_requests_total[5m])",
+                "legendFormat": "{{method}} {{endpoint}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Request Latency (P95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(api_request_latency_seconds_bucket[5m]))",
+                "legendFormat": "{{method}} {{endpoint}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(api_errors_total[5m])",
+                "legendFormat": "{{type}} {{endpoint}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Messages by Channel",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "channel_messages_total",
+                "legendFormat": "{{channel}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          },
+          {
+            "id": 5,
+            "title": "Escalations",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(escalations_total[1h])",
+                "legendFormat": "{{reason}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+          },
+          {
+            "id": 6,
+            "title": "System Health",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "up{job=\"crm-fte-api\"}",
+                "legendFormat": "API Status"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+          }
+        ],
+        "refresh": "30s",
+        "version": 1
+      }
+    }
+
+---
+# =============================================================================
+# ALERTS CONFIGMAP
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerts
+  namespace: crm-fte
+  labels:
+    app: prometheus
+data:
+  alerts.yml: |
+    groups:
+      - name: crm-fte-alerts
+        rules:
+          # High error rate alert
+          - alert: HighErrorRate
+            expr: rate(api_errors_total[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High error rate detected"
+              description: "Error rate is {{ $value }} errors/sec"
+          
+          # High latency alert
+          - alert: HighLatency
+            expr: histogram_quantile(0.95, rate(api_request_latency_seconds_bucket[5m])) > 2
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High latency detected"
+              description: "P95 latency is {{ $value }}s"
+          
+          # API down alert
+          - alert: APIDown
+            expr: up{job="crm-fte-api"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "API is down"
+              description: "API service {{ $labels.instance }} is not responding"
+          
+          # High escalation rate alert
+          - alert: HighEscalationRate
+            expr: rate(escalations_total[1h]) > 10
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High escalation rate"
+              description: "Escalation rate is {{ $value }}/hour"

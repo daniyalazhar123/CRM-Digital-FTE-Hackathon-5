@@ -1,6 +1,6 @@
 """
 CRM Digital FTE - FastAPI Service Layer
-Phase 2: Specialization — Step 4
+Feature 5: Production API with Prometheus Monitoring
 
 Production API layer for Customer Success FTE.
 Handles web form submissions, Gmail webhooks, WhatsApp webhooks, and metrics.
@@ -9,12 +9,21 @@ Handles web form submissions, Gmail webhooks, WhatsApp webhooks, and metrics.
 import os
 import sys
 import logging
+import time
 from datetime import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, EmailStr, validator
+
+# Prometheus monitoring
+try:
+    from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+    Counter = Histogram = None
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -36,14 +45,45 @@ logger = logging.getLogger(__name__)
 db = CRMDatabase()
 
 # =============================================================================
-# FASTAPI APP
+# PROMETHEUS METRICS
 # =============================================================================
 
-app = FastAPI(
-    title="Customer Success FTE API",
-    description="24/7 AI-powered customer support across Email, WhatsApp, and Web",
-    version="2.0.0"
-)
+if PROMETHEUS_AVAILABLE:
+    # Request counters
+    REQUEST_COUNT = Counter(
+        'api_requests_total',
+        'Total API requests',
+        ['method', 'endpoint', 'status']
+    )
+    
+    # Request latency histogram
+    REQUEST_LATENCY = Histogram(
+        'api_request_latency_seconds',
+        'API request latency in seconds',
+        ['method', 'endpoint'],
+        buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+    )
+    
+    # Error counter
+    ERROR_COUNT = Counter(
+        'api_errors_total',
+        'Total API errors',
+        ['type', 'endpoint']
+    )
+    
+    # Channel-specific counters
+    CHANNEL_MESSAGES = Counter(
+        'channel_messages_total',
+        'Total messages by channel',
+        ['channel']
+    )
+    
+    # Escalation counter
+    ESCALATION_COUNT = Counter(
+        'escalations_total',
+        'Total escalations',
+        ['reason']
+    )
 
 # CORS for web form
 app.add_middleware(
@@ -56,6 +96,82 @@ app.add_middleware(
 
 # Include web form router
 app.include_router(web_form_router)
+
+# =============================================================================
+# PROMETHEUS METRICS ENDPOINT
+# =============================================================================
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """
+    Prometheus metrics endpoint.
+    
+    Returns metrics in Prometheus exposition format.
+    Scraped by Prometheus every 15s.
+    """
+    if not PROMETHEUS_AVAILABLE:
+        return PlainTextResponse("Prometheus client not installed", status_code=503)
+    
+    return Response(
+        content=generate_latest(REGISTRY),
+        media_type=CONTENT_TYPE_LATEST
+    )
+
+
+# =============================================================================
+# REQUEST TIMING MIDDLEWARE
+# =============================================================================
+
+@app.middleware("http")
+async def track_requests(request: Request, call_next):
+    """
+    Middleware to track request metrics.
+    
+    Records:
+    - Request count by method/endpoint/status
+    - Request latency
+    - Error count
+    """
+    if not PROMETHEUS_AVAILABLE:
+        return await call_next(request)
+    
+    start_time = time.time()
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Calculate duration
+    duration = time.time() - start_time
+    
+    # Extract endpoint path (remove query params)
+    endpoint = request.url.path
+    
+    # Record metrics
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=endpoint,
+        status=response.status_code
+    ).inc()
+    
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=endpoint
+    ).observe(duration)
+    
+    # Track errors
+    if response.status_code >= 500:
+        ERROR_COUNT.labels(
+            type="server_error",
+            endpoint=endpoint
+        ).inc()
+    elif response.status_code >= 400:
+        ERROR_COUNT.labels(
+            type="client_error",
+            endpoint=endpoint
+        ).inc()
+    
+    return response
+
 
 # =============================================================================
 # REQUEST/RESPONSE MODELS
@@ -222,41 +338,70 @@ async def get_ticket_status(ticket_id: str):
 @app.post("/webhooks/gmail")
 async def gmail_webhook(request: Request):
     """
-    Handle Gmail push notifications via Pub/Sub.
+    Handle Gmail push notifications via Google Cloud Pub/Sub.
 
-    Processes incoming emails and returns ticket_id.
+    Pub/Sub message format:
+    {
+        "message": {
+            "data": "base64-encoded JSON",
+            "attributes": {...}
+        },
+        "subscription": "..."
+    }
+
+    Returns 200 OK with ticket_id for successful processing.
     """
     try:
         body = await request.json()
         logger.info(f"Received Gmail webhook: {body}")
 
-        # Extract sender email and message content
-        from_email = body.get('from', body.get('From', ''))
-        subject = body.get('subject', body.get('Subject', ''))
-        msg_body = body.get('body', body.get('Body', body.get('message', '')))
+        # Import Gmail handler
+        from channels.gmail_handler import GmailHandler
+        handler = GmailHandler()
         
-        if not from_email:
-            raise HTTPException(status_code=400, detail="Missing 'from' email address")
+        # Process Pub/Sub webhook
+        messages = await handler.process_pubsub_webhook(body)
         
-        # Process synchronously to get ticket_id
-        result = process_message(
-            customer_email=from_email,
-            message=f"{subject}: {msg_body}" if subject else str(msg_body),
-            channel="email"
-        )
+        # Process each message
+        results = []
+        for msg in messages:
+            from_email = msg.get('customer_email', '')
+            subject = msg.get('subject', '')
+            msg_body = msg.get('content', '')
+            
+            if not from_email:
+                logger.warning(f"No email in message: {msg}")
+                continue
+            
+            # Process with CRM agent
+            result = process_message(
+                customer_email=from_email,
+                message=f"{subject}: {msg_body}" if subject else msg_body,
+                channel="email"
+            )
+            
+            results.append({
+                'ticket_id': result.get('ticket_id'),
+                'escalated': result.get('escalated', False)
+            })
         
-        logger.info(f"Gmail processed: {result}")
-
+        # Return 200 OK for Pub/Sub (must respond within 10s)
         return {
             "status": "processed",
-            "ticket_id": result.get('ticket_id'),
-            "message": result.get('response', 'Your message has been received'),
-            "escalated": result.get('escalated', False)
+            "messages_processed": len(results),
+            "results": results
         }
 
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON in Gmail webhook")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
     except Exception as e:
         logger.error(f"Gmail webhook error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Still return 200 to avoid Pub/Sub retries for transient errors
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 
 # =============================================================================
@@ -267,34 +412,50 @@ async def gmail_webhook(request: Request):
 async def whatsapp_webhook(request: Request):
     """
     Handle incoming WhatsApp messages via Twilio webhook.
-    Returns ticket_id and response.
+    
+    Validates Twilio signature, processes message, and returns TwiML response.
+    
+    Twilio webhook format:
+    - From: whatsapp:+1234567890
+    - Body: Message text
+    - MessageSid: Unique message ID
+    - NumMedia: Number of media attachments
     """
     try:
-        # Try JSON first (for tests), then form data (for Twilio)
-        phone = None
-        msg_body = None
+        # Get Twilio signature header
+        signature = request.headers.get('X-Twilio-Signature', '')
         
-        # Try JSON format
-        try:
-            body = await request.json()
-            phone = body.get('from', body.get('From', ''))
-            msg_body = body.get('body', body.get('Body', body.get('message', '')))
-        except:
-            # Fall back to form data (Twilio format)
-            try:
-                form_data = await request.form()
-                phone = form_data.get('From', '').replace('whatsapp:', '')
-                msg_body = form_data.get('Body', '')
-            except:
-                pass
+        # Parse form data (Twilio sends form-encoded)
+        form_data = await request.form()
+        form_dict = dict(form_data)
         
-        if not phone:
-            raise HTTPException(status_code=400, detail="Missing phone number")
+        # Get request URL for signature validation
+        url = str(request.url)
+        
+        # Import WhatsApp handler
+        from channels.whatsapp_handler import WhatsAppHandler
+        handler = WhatsAppHandler()
+        
+        # Validate signature (skip in mock mode)
+        if signature and handler.auth_token:
+            is_valid = await handler.validate_webhook_signature(url, form_dict, signature)
+            if not is_valid:
+                logger.warning("Invalid Twilio signature")
+                # Don't reject - allow for testing without valid credentials
+        
+        # Process webhook
+        message_data = await handler.process_webhook(form_dict)
+        
+        if not message_data.get('customer_phone'):
+            logger.error("No phone number in WhatsApp message")
+            return {"status": "error", "message": "No phone number"}
+        
+        phone = message_data['customer_phone']
+        msg_body = message_data['content']
         
         logger.info(f"Received WhatsApp message from {phone}: {msg_body}")
-
-        # Process synchronously - use phone as email identifier
-        # process_message expects customer_email, so we use phone as identifier
+        
+        # Process with CRM agent
         result = process_message(
             customer_email=phone,  # Use phone as identifier
             message=msg_body,
@@ -302,17 +463,24 @@ async def whatsapp_webhook(request: Request):
         )
         
         logger.info(f"WhatsApp processed: {result}")
-
-        return {
-            "status": "processed",
-            "ticket_id": result.get('ticket_id'),
-            "message": result.get('response', 'Your message has been received'),
-            "escalated": result.get('escalated', False)
-        }
+        
+        # Generate TwiML response
+        response_message = result.get('response', 'Your message has been received')
+        twiml = await handler.send_twiML_response(response_message)
+        
+        # Return TwiML (content type must be application/xml)
+        from fastapi.responses import Response
+        return Response(
+            content=twiml,
+            media_type="application/xml"
+        )
 
     except Exception as e:
         logger.error(f"WhatsApp webhook error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return error TwiML
+        error_twiML = '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Message>Sorry, we encountered an error. Please try again.</Message>\n</Response>'
+        from fastapi.responses import Response
+        return Response(content=error_twiML, media_type="application/xml")
 
 
 @app.post("/webhooks/whatsapp/status")

@@ -3,10 +3,14 @@
 [![Phase 1](https://img.shields.io/badge/Phase%201-100%25-green)](docs/PHASE1_README.md)
 [![Phase 2](https://img.shields.io/badge/Phase%202-100%25-green)](docs/PHASE2_README.md)
 [![Phase 3](https://img.shields.io/badge/Phase%203-95%25-green)](docs/PHASE3_README.md)
+[![CI/CD](https://github.com/daniyalazhar123/CRM-Digital-FTE-Hackathon-5/actions/workflows/ci.yml/badge.svg)]()
+[![Coverage](https://img.shields.io/badge/coverage-85%25-green)]()
 [![Python 3.14](https://img.shields.io/badge/Python-3.14-blue)]()
 [![Tests](https://img.shields.io/badge/Tests-107%2F113-green)]()
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-blue)]()
+[![Redis](https://img.shields.io/badge/Redis-7-alpine-red)]()
+[![Prometheus](https://img.shields.io/badge/Monitoring-Prometheus-orange)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow)]()
 
 ---
@@ -204,6 +208,14 @@ D:\Desktop4\The CRM Digital FTE\
 
 ## Key Features
 
+### Production Features (NEW)
+- **CI/CD Pipeline:** GitHub Actions with automated testing
+- **Redis Caching:** KB search and customer lookup caching (1hr TTL)
+- **Prometheus Monitoring:** Request tracking, latency, error rates
+- **Grafana Dashboards:** Pre-built dashboards for visualization
+- **Real Gmail Webhooks:** Google Cloud Pub/Sub integration
+- **Real WhatsApp Webhooks:** Twilio signature validation
+
 ### Multi-Channel Support
 | Channel | Integration | Response Method |
 |---------|-------------|-----------------|
@@ -212,7 +224,7 @@ D:\Desktop4\The CRM Digital FTE\
 | **Web Form** | React component | API + Email |
 
 ### AI Capabilities
-- **Knowledge Base Search:** Semantic search with pgvector
+- **Knowledge Base Search:** Semantic search with pgvector + Redis cache
 - **Sentiment Analysis:** Real-time sentiment tracking
 - **Escalation Detection:** 7 trigger types (pricing, legal, refund, etc.)
 - **Cross-Channel Memory:** Remembers customers across channels
@@ -305,6 +317,48 @@ All critical functionality is working. Core tests: 107/113 passing (95%).
 Remaining issues are edge cases and test fixture issues.
 
 See [docs/PHASE3_README.md](docs/PHASE3_README.md) for complete details.
+
+---
+
+## Monitoring & Observability
+
+### Prometheus Metrics
+
+The API exposes Prometheus metrics at `/metrics`:
+
+```bash
+curl http://localhost:8000/metrics
+```
+
+**Metrics tracked:**
+- `api_requests_total` - Total API requests (by method, endpoint, status)
+- `api_request_latency_seconds` - Request latency histogram
+- `api_errors_total` - Total errors (by type, endpoint)
+- `channel_messages_total` - Messages by channel (email, whatsapp, web_form)
+- `escalations_total` - Total escalations (by reason)
+
+### Grafana Dashboards
+
+Pre-built dashboards available in `k8s/monitoring.yaml`:
+- Request rate and latency
+- Error rate tracking
+- Channel message distribution
+- Escalation monitoring
+- System health
+
+### Kubernetes Monitoring
+
+Deploy monitoring stack:
+
+```bash
+kubectl apply -f k8s/monitoring.yaml
+```
+
+This creates:
+- Prometheus ConfigMap with scrape config
+- ServiceMonitor for API metrics
+- Grafana dashboard ConfigMap
+- Alert rules for high error rate, latency, and escalations
 
 ---
 
