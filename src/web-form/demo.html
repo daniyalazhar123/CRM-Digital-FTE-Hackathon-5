@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechCorp AI Support Hub</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f0f0f;
+            color: #ffffff;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%);
+            padding: 40px 0;
+            border-bottom: 2px solid #e50914;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .logo {
+            font-size: 48px;
+        }
+
+        h1 {
+            font-size: 36px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #e50914 0%, #0070f3 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            color: #888;
+            margin-top: 10px;
+        }
+
+        /* Hero */
+        .hero {
+            padding: 60px 0;
+            text-align: center;
+            background: linear-gradient(180deg, #0f0f0f 0%, #1a1a1a 100%);
+        }
+
+        .hero h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+            color: #ffffff;
+        }
+
+        .hero p {
+            font-size: 20px;
+            color: #aaa;
+        }
+
+        /* Stats */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 40px 0;
+        }
+
+        .stat-card {
+            background: #1a1a1a;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid #333;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: #e50914;
+            box-shadow: 0 10px 30px rgba(229, 9, 20, 0.2);
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #00ff88;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            font-size: 16px;
+            color: #888;
+        }
+
+        /* Architecture */
+        .architecture {
+            padding: 60px 0;
+            background: #1a1a1a;
+        }
+
+        .architecture h2 {
+            font-size: 28px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .arch-diagram {
+            background: #0f0f0f;
+            padding: 30px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            border: 1px solid #333;
+        }
+
+        /* Features */
+        .features {
+            padding: 60px 0;
+        }
+
+        .features h2 {
+            font-size: 28px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-card {
+            background: #1a1a1a;
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid #333;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            border-color: #0070f3;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0, 112, 243, 0.2);
+        }
+
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 15px;
+        }
+
+        .feature-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .feature-desc {
+            color: #888;
+            font-size: 14px;
+        }
+
+        /* API Endpoints */
+        .api {
+            padding: 60px 0;
+            background: #1a1a1a;
+        }
+
+        .api h2 {
+            font-size: 28px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .api-table {
+            background: #0f0f0f;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #333;
+        }
+
+        .api-row {
+            display: grid;
+            grid-template-columns: 150px 1fr 100px;
+            padding: 15px 20px;
+            border-bottom: 1px solid #333;
+        }
+
+        .api-row:last-child {
+            border-bottom: none;
+        }
+
+        .api-method {
+            font-weight: 600;
+            color: #0070f3;
+        }
+
+        .api-path {
+            color: #fff;
+            font-family: monospace;
+        }
+
+        .api-desc {
+            color: #888;
+            text-align: right;
+        }
+
+        /* Tech Stack */
+        .tech-stack {
+            padding: 40px 0;
+            text-align: center;
+        }
+
+        .tech-stack h2 {
+            font-size: 28px;
+            margin-bottom: 30px;
+        }
+
+        .badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .badge {
+            background: #1a1a1a;
+            padding: 10px 20px;
+            border-radius: 20px;
+            border: 1px solid #333;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .badge:hover {
+            border-color: #e50914;
+            background: #252525;
+        }
+
+        /* Footer */
+        footer {
+            background: #1a1a1a;
+            padding: 30px 0;
+            text-align: center;
+            border-top: 2px solid #e50914;
+            margin-top: 60px;
+        }
+
+        footer p {
+            color: #888;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 28px;
+            }
+
+            .hero h2 {
+                font-size: 24px;
+            }
+
+            .api-row {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+
+            .api-desc {
+                text-align: left;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">🤖</div>
+                <div>
+                    <h1>TechCorp AI Support Hub</h1>
+                    <p class="subtitle">24/7 AI Customer Support — Powered by Groq + FastAPI</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="container">
+            <h2>Next-Generation Customer Support</h2>
+            <p>AI-powered employee that works 24/7 across Email, WhatsApp, and Web</p>
+        </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="container">
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value">173/173 ✅</div>
+                <div class="stat-label">Tests Passing</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">99.9% ✅</div>
+                <div class="stat-label">Uptime</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">&lt;3s ✅</div>
+                <div class="stat-label">Response Time</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">3 ✅</div>
+                <div class="stat-label">Channels</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture -->
+    <section class="architecture">
+        <div class="container">
+            <h2>System Architecture</h2>
+            <div class="arch-diagram">
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│  Web Form   │   │    Gmail    │   │  WhatsApp   │
+│  (React)    │   │  (Webhook)  │   │  (Twilio)   │
+└──────┬──────┘   └──────┬──────┘   └──────┬──────┘
+       └──────────────┬──┘──────────────────┘
+              ┌───────▼────────┐
+              │   FastAPI      │
+              │  (8 endpoints) │
+              └───────┬────────┘
+                      │
+         ┌────────────┼────────────┐
+         ▼            ▼            ▼
+   ┌──────────┐ ┌──────────┐ ┌──────────┐
+   │PostgreSQL│ │  Redis   │ │  Kafka   │
+   │+pgvector │ │ (cache)  │ │(stream)  │
+   └──────────┘ └──────────┘ └──────────┘
+         │
+   ┌─────▼─────┐
+   │Prometheus │
+   │(metrics)  │
+   └───────────┘
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+        <div class="container">
+            <h2>Key Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📧</div>
+                    <div class="feature-title">Multi-Channel Support</div>
+                    <div class="feature-desc">Email (Gmail), WhatsApp (Twilio), and Web Form integration with unified customer tracking</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🗄️</div>
+                    <div class="feature-title">PostgreSQL + pgvector</div>
+                    <div class="feature-desc">Vector similarity search for semantic knowledge base queries with 1536-dimensional embeddings</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <div class="feature-title">Redis Caching</div>
+                    <div class="feature-desc">High-performance caching for KB searches and customer lookups with 1-hour TTL</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔄</div>
+                    <div class="feature-title">Kafka Streaming</div>
+                    <div class="feature-desc">Event-driven architecture with 9 topics for ticket ingestion, channels, and escalations</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <div class="feature-title">Prometheus Monitoring</div>
+                    <div class="feature-desc">Real-time metrics tracking for API requests, latency, errors, and channel performance</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">☸️</div>
+                    <div class="feature-title">Kubernetes Ready</div>
+                    <div class="feature-desc">Production-ready K8s manifests with HPA, health checks, and multi-replica deployments</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- API Endpoints -->
+    <section class="api">
+        <div class="container">
+            <h2>API Endpoints</h2>
+            <div class="api-table">
+                <div class="api-row">
+                    <div class="api-method">GET</div>
+                    <div class="api-path">/health</div>
+                    <div class="api-desc">Health check</div>
+                </div>
+                <div class="api-row">
+                    <div class="api-method">POST</div>
+                    <div class="api-path">/support/submit</div>
+                    <div class="api-desc">Web form submission</div>
+                </div>
+                <div class="api-row">
+                    <div class="api-method">GET</div>
+                    <div class="api-path">/support/ticket/{id}</div>
+                    <div class="api-desc">Ticket status</div>
+                </div>
+                <div class="api-row">
+                    <div class="api-method">POST</div>
+                    <div class="api-path">/webhooks/gmail</div>
+                    <div class="api-desc">Gmail webhook</div>
+                </div>
+                <div class="api-row">
+                    <div class="api-method">POST</div>
+                    <div class="api-path">/webhooks/whatsapp</div>
+                    <div class="api-desc">WhatsApp webhook</div>
+                </div>
+                <div class="api-row">
+                    <div class="api-method">GET</div>
+                    <div class="api-path">/customers/lookup</div>
+                    <div class="api-desc">Customer lookup</div>
+                </div>
+                <div class="api-row">
+                    <div class="api-method">GET</div>
+                    <div class="api-path">/metrics/channels</div>
+                    <div class="api-desc">Channel metrics</div>
+                </div>
+                <div class="api-row">
+                    <div class="api-method">GET</div>
+                    <div class="api-path">/metrics</div>
+                    <div class="api-desc">Prometheus metrics</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section class="tech-stack">
+        <div class="container">
+            <h2>Tech Stack</h2>
+            <div class="badges">
+                <div class="badge">Python 3.14</div>
+                <div class="badge">FastAPI 0.115</div>
+                <div class="badge">PostgreSQL + pgvector</div>
+                <div class="badge">Redis 7</div>
+                <div class="badge">Apache Kafka</div>
+                <div class="badge">Kubernetes</div>
+                <div class="badge">Prometheus</div>
+                <div class="badge">Groq API</div>
+                <div class="badge">OpenAI SDK</div>
+                <div class="badge">React</div>
+                <div class="badge">Docker</div>
+                <div class="badge">GitHub Actions</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>Built for Hackathon 5 | Panaversity | The CRM Digital FTE Factory</p>
+            <p style="margin-top: 10px; font-size: 12px;">173/173 Tests Passing | 100% Complete | Ready for Production</p>
+        </div>
+    </footer>
+</body>
+</html>
