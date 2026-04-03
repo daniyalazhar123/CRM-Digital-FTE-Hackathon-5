@@ -91,6 +91,114 @@ CREATE INDEX idx_embeddings_embedding ON embeddings USING ivfflat (embedding vec
 CREATE INDEX idx_embeddings_category ON embeddings(category);
 
 -- =============================================================================
+-- TABLE: customer_identifiers
+-- Purpose: Cross-channel customer identification (email, phone, WhatsApp)
+-- =============================================================================
+CREATE TABLE customer_identifiers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+    identifier_type VARCHAR(50), -- 'email', 'phone', 'whatsapp'
+    identifier_value VARCHAR(255),
+    is_primary BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(customer_id, identifier_type, identifier_value)
+);
+
+-- Indexes for customer_identifiers
+CREATE INDEX idx_customer_identifiers_customer_id ON customer_identifiers(customer_id);
+CREATE INDEX idx_customer_identifiers_value ON customer_identifiers(identifier_value);
+CREATE INDEX idx_customer_identifiers_type ON customer_identifiers(identifier_type);
+
+-- =============================================================================
+-- TABLE: conversations
+-- Purpose: Conversation threads with channel tracking
+-- =============================================================================
+CREATE TABLE conversations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+    ticket_id VARCHAR(50) REFERENCES tickets(id) ON DELETE CASCADE,
+    channel VARCHAR(50),
+    status VARCHAR(50) DEFAULT 'active', -- 'active', 'resolved', 'escalated'
+    sentiment_score FLOAT,
+    sentiment_trend VARCHAR(50) DEFAULT 'stable', -- 'improving', 'stable', 'declining'
+    frustration_flag BOOLEAN DEFAULT FALSE,
+    resolution_type VARCHAR(100), -- 'ai_resolved', 'escalated', 'pending'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_activity TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Indexes for conversations
+CREATE INDEX idx_conversations_customer_id ON conversations(customer_id);
+CREATE INDEX idx_conversations_ticket_id ON conversations(ticket_id);
+CREATE INDEX idx_conversations_channel ON conversations(channel);
+CREATE INDEX idx_conversations_status ON conversations(status);
+CREATE INDEX idx_conversations_last_activity ON conversations(last_activity);
+
+-- =============================================================================
+-- TABLE: knowledge_base
+-- Purpose: Product documentation with vector embeddings
+-- =============================================================================
+CREATE TABLE knowledge_base (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(100),
+    tags TEXT[],
+    embedding VECTOR(1536),
+    source_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for knowledge_base
+CREATE INDEX idx_knowledge_base_category ON knowledge_base(category);
+CREATE INDEX idx_knowledge_base_is_active ON knowledge_base(is_active);
+CREATE INDEX idx_knowledge_base_embedding ON knowledge_base USING ivfflat (embedding vector_cosine_ops);
+
+-- =============================================================================
+-- TABLE: channel_configs
+-- Purpose: Channel-specific configurations
+-- =============================================================================
+CREATE TABLE channel_configs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    channel VARCHAR(50) UNIQUE NOT NULL, -- 'email', 'whatsapp', 'web_form'
+    is_active BOOLEAN DEFAULT TRUE,
+    max_response_chars INTEGER,
+    max_response_words INTEGER,
+    response_style VARCHAR(50), -- 'formal', 'conversational', 'semi-formal'
+    webhook_url VARCHAR(500),
+    config JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Insert default channel configs
+INSERT INTO channel_configs (channel, max_response_chars, max_response_words, response_style) VALUES
+    ('email', 3000, 500, 'formal'),
+    ('whatsapp', 300, 50, 'conversational'),
+    ('web_form', 1800, 300, 'semi-formal');
+
+-- =============================================================================
+-- TABLE: agent_metrics
+-- Purpose: Performance tracking and monitoring
+-- =============================================================================
+CREATE TABLE agent_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    metric_type VARCHAR(100) NOT NULL, -- 'response_time', 'escalation', 'error', 'sentiment'
+    channel VARCHAR(50),
+    value FLOAT,
+    metadata JSONB DEFAULT '{}',
+    recorded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for agent_metrics
+CREATE INDEX idx_agent_metrics_type ON agent_metrics(metric_type);
+CREATE INDEX idx_agent_metrics_channel ON agent_metrics(channel);
+CREATE INDEX idx_agent_metrics_recorded_at ON agent_metrics(recorded_at);
+
+-- =============================================================================
 -- SAMPLE DATA (Optional - for testing)
 -- =============================================================================
 

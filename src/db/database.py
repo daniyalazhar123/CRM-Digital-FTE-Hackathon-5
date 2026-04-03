@@ -163,44 +163,63 @@ class CRMDatabase:
     # CUSTOMER OPERATIONS
     # -------------------------------------------------------------------------
     
-    def get_or_create_customer(self, email: str = None, phone: str = None, 
+    def get_or_create_customer(self, email: str = None, phone: str = None,
                                 name: str = None) -> dict:
         """
         Get existing customer or create new one.
         Matches InMemoryStore.get_or_create_customer()
+        
+        Cross-channel recognition:
+        - If email provided, check if customer with that email OR linked phone exists
+        - If phone provided, check if customer with that phone OR linked email exists
+        - Updates missing identifiers to link channels
         """
         with DatabaseConnection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Try to find by email
+                # Try to find by email first
                 if email:
                     cur.execute("""
                         SELECT * FROM customers WHERE email = %s
                     """, (email,))
                     customer = cur.fetchone()
-                    
+
                     if customer:
-                        print(f"✓ Found customer: {customer['email']}")
+                        # Found by email, update phone if provided and not set
+                        if phone and not customer.get('phone'):
+                            cur.execute("""
+                                UPDATE customers SET phone = %s WHERE id = %s
+                            """, (phone, customer['id']))
+                            conn.commit()
+                            customer['phone'] = phone
+                        print(f"✓ Found customer by email: {customer['email']}")
                         return dict(customer)
-                
-                # Try to find by phone
+
+                # Try to find by phone second
                 if phone:
                     cur.execute("""
                         SELECT * FROM customers WHERE phone = %s
                     """, (phone,))
                     customer = cur.fetchone()
-                    
+
                     if customer:
-                        print(f"✓ Found customer: {customer['phone']}")
+                        # Found by phone, update email if provided and not set
+                        if email and not customer.get('email'):
+                            cur.execute("""
+                                UPDATE customers SET email = %s WHERE id = %s
+                            """, (email, customer['id']))
+                            conn.commit()
+                            customer['email'] = email
+                        print(f"✓ Found customer by phone: {customer['phone']}")
                         return dict(customer)
-                
-                # Create new customer
+
+                # Create new customer with both identifiers
                 customer_id = self._generate_uuid()
                 cur.execute("""
                     INSERT INTO customers (id, email, phone, name, plan, metadata)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING *
                 """, (customer_id, email, phone, name, 'free', '{}'))
-                
+
                 customer = cur.fetchone()
                 print(f"✓ Created customer: {email or phone}")
                 return dict(customer)

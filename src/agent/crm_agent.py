@@ -55,10 +55,18 @@ ESCALATION_KEYWORDS = {
 }
 
 # Initialize Groq client (OpenAI SDK compatible)
-client = OpenAI(
-    api_key=GROQ_API_KEY,
-    base_url=BASE_URL
-) if GROQ_API_KEY and GROQ_API_KEY != "your-groq-api-key-here" else None
+# Handle Python 3.14 compatibility - avoid proxies argument
+try:
+    if GROQ_API_KEY and GROQ_API_KEY != "your-groq-api-key-here":
+        client = OpenAI(
+            api_key=GROQ_API_KEY,
+            base_url=BASE_URL
+        )
+    else:
+        client = None
+except Exception as e:
+    logger.warning(f"Failed to initialize Groq client: {e}")
+    client = None
 
 # Initialize database
 db = CRMDatabase()
@@ -191,22 +199,31 @@ def search_product_docs(query: str, max_results: int = 5) -> List[dict]:
 def create_ticket(params: CreateTicketInput) -> str:
     """
     Create a support ticket for tracking.
-    
+
     Args:
         params: CreateTicketInput with customer_email, message, channel, priority
-    
+
     Returns:
         JSON string with ticket_id and customer_id
     """
     try:
         logger.info(f"Creating ticket for {params.customer_email} via {params.channel}")
+
+        # Detect if customer_email is actually an email or phone number
+        is_phone = params.customer_email.startswith('+') or params.customer_email.replace('-', '').replace(' ', '').isdigit()
         
-        # Get or create customer
-        customer = db.get_or_create_customer(
-            email=params.customer_email,
-            name=params.customer_name
-        )
-        
+        # Get or create customer with correct identifier
+        if is_phone or params.channel == 'whatsapp':
+            customer = db.get_or_create_customer(
+                phone=params.customer_email,
+                name=params.customer_name
+            )
+        else:
+            customer = db.get_or_create_customer(
+                email=params.customer_email,
+                name=params.customer_name
+            )
+
         # Create ticket
         ticket = db.create_ticket(
             customer_id=customer['id'],
@@ -214,14 +231,14 @@ def create_ticket(params: CreateTicketInput) -> str:
             priority=params.priority,
             channel=params.channel
         )
-        
+
         return json.dumps({
             "success": True,
             "ticket_id": ticket['id'],
             "customer_id": customer['id'],
             "status": "open"
         })
-        
+
     except Exception as e:
         logger.error(f"Create ticket error: {e}")
         return json.dumps({"success": False, "error": str(e)})
@@ -230,25 +247,31 @@ def create_ticket(params: CreateTicketInput) -> str:
 def get_customer_context(params: CustomerContextInput) -> str:
     """
     Get customer's complete context including history and stats.
-    
+
     Args:
         params: CustomerContextInput with customer_email
-    
+
     Returns:
         JSON string with history, stats, and is_returning_customer flag
     """
     try:
         logger.info(f"Getting context for {params.customer_email}")
+
+        # Detect if customer_email is actually an email or phone number
+        is_phone = params.customer_email.startswith('+') or params.customer_email.replace('-', '').replace(' ', '').isdigit()
         
-        # Get customer
-        customer = db.get_or_create_customer(email=params.customer_email)
-        
+        # Get customer with correct identifier
+        if is_phone:
+            customer = db.get_or_create_customer(phone=params.customer_email)
+        else:
+            customer = db.get_or_create_customer(email=params.customer_email)
+
         # Get history
         history = db.get_customer_history(customer['id'], limit=10)
 
         # Get stats
         stats = db.get_customer_stats(customer['id'])
-        
+
         # Convert history to serializable format
         serializable_history = []
         for h in history[:5]:
@@ -258,7 +281,7 @@ def get_customer_context(params: CustomerContextInput) -> str:
                 if hasattr(value, 'isoformat'):
                     h_copy[key] = value.isoformat()
             serializable_history.append(h_copy)
-        
+
         # Convert stats to serializable format
         serializable_stats = {}
         for key, value in stats.items():
