@@ -309,21 +309,17 @@ class GmailHandler:
             if not self._authenticated:
                 await self.authenticate()
 
-            # In production, call Gmail API:
-            # message = self.service.users().messages().get(
-            #     userId='me', id=message_id, format='full'
-            # ).execute()
-            
-            # For testing, return mock data
-            return {
-                'channel': 'email',
-                'channel_message_id': message_id,
-                'customer_email': 'test@example.com',
-                'subject': 'Test Subject',
-                'content': 'Test message content',
-                'received_at': datetime.utcnow().isoformat(),
-                'thread_id': None
-            }
+            if not self._authenticated or not self.service:
+                raise RuntimeError(
+                    "Gmail API not authenticated. Set up Gmail service account credentials "
+                    "(GOOGLE_APPLICATION_CREDENTIALS) and google-auth + google-api-python-client "
+                    "dependencies to enable real Gmail integration."
+                )
+
+            message = self.service.users().messages().get(
+                userId='me', id=message_id, format='full'
+            ).execute()
+            return await self._parse_gmail_payload(message)
 
         except Exception as e:
             logger.error(f"Error fetching Gmail message: {e}")
@@ -348,6 +344,12 @@ class GmailHandler:
             if not self._authenticated:
                 await self.authenticate()
 
+            if not self._authenticated or not self.service:
+                raise RuntimeError(
+                    "Gmail API not authenticated. Set up Gmail service account credentials "
+                    "to enable real email sending."
+                )
+
             # Create MIME message
             message = MIMEMultipart('alternative') if html else MIMEText(body)
             message['to'] = to_email
@@ -357,30 +359,21 @@ class GmailHandler:
                 message.attach(MIMEText(body, 'plain'))
                 message.attach(MIMEText(body, 'html'))
 
-            # In production, encode and send via Gmail API:
-            # raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-            # result = self.service.users().messages().send(
-            #     userId='me', 
-            #     body={'raw': raw, 'threadId': thread_id}
-            # ).execute()
-
-            # For testing, log and return success
-            logger.info(f"Sending Gmail reply to {to_email}: {subject}")
-            logger.info(f"Body: {body[:200]}...")
+            raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+            result = self.service.users().messages().send(
+                userId='me', 
+                body={'raw': raw, 'threadId': thread_id}
+            ).execute()
 
             return {
-                'channel_message_id': f"mock_{datetime.utcnow().timestamp()}",
+                'channel_message_id': result.get('id'),
                 'delivery_status': 'sent',
                 'thread_id': thread_id
             }
 
         except Exception as e:
             logger.error(f"Error sending Gmail reply: {e}")
-            return {
-                'channel_message_id': None,
-                'delivery_status': 'failed',
-                'error': str(e)
-            }
+            raise
 
     async def process_webhook(self, payload: dict) -> List[dict]:
         """

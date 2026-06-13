@@ -36,9 +36,9 @@ class WhatsAppHandler:
                 self._initialized = True
                 logger.info("Twilio WhatsApp handler initialized")
             else:
-                logger.warning("Twilio credentials not configured, using mock mode")
+                logger.warning("Twilio credentials not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env for real WhatsApp integration.")
         except ImportError:
-            logger.warning("Twilio library not installed, using mock mode")
+            logger.warning("Twilio library not installed. Run: pip install twilio")
 
     async def validate_webhook_signature(self, request_url: str, request_body: dict, 
                                           signature: str) -> bool:
@@ -58,7 +58,7 @@ class WhatsAppHandler:
         """
         if not self.auth_token:
             logger.warning("No auth token for signature validation")
-            return True  # Skip validation in mock mode
+            return True  # Skip validation if no auth token configured
 
         try:
             from twilio.request_validator import RequestValidator
@@ -234,17 +234,10 @@ class WhatsAppHandler:
                     'sent_at': datetime.utcnow().isoformat()
                 }
             else:
-                # Mock mode - log and return success
-                logger.info(f"[MOCK] Sending WhatsApp to {to_phone}")
-                logger.info(f"Body: {body[:200]}...")
-                if media_url:
-                    logger.info(f"Media: {media_url}")
-
-                return {
-                    'channel_message_id': f"mock_{datetime.utcnow().timestamp()}",
-                    'delivery_status': 'sent',
-                    'sent_at': datetime.utcnow().isoformat()
-                }
+                raise RuntimeError(
+                    f"Cannot send WhatsApp to {to_phone}: Twilio not configured. "
+                    "Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env to enable real WhatsApp integration."
+                )
 
         except Exception as e:
             logger.error(f"Error sending WhatsApp message: {e}")

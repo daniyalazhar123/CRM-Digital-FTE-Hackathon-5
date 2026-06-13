@@ -184,18 +184,16 @@ class TestGmailHandlerUnit:
         
         assert isinstance(result, list)
     
-    def test_send_reply_mock(self):
-        """Test send_reply in mock mode."""
+    def test_send_reply_no_auth(self):
+        """Test send_reply raises error without Gmail auth."""
         from channels.gmail_handler import GmailHandler
         import asyncio
         
         handler = GmailHandler()
         
-        result = asyncio.run(handler.send_reply(
-            to_email='test@example.com',
-            subject='Test',
-            body='Test body'
-        ))
-        
-        assert 'delivery_status' in result
-        assert result['delivery_status'] == 'sent'
+        with pytest.raises(RuntimeError):
+            asyncio.run(handler.send_reply(
+                to_email='test@example.com',
+                subject='Test',
+                body='Test body'
+            ))

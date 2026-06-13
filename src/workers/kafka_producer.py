@@ -11,12 +11,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-try:
-    from aiokafka import AIOKafkaProducer
-    KAFKA_AVAILABLE = True
-except ImportError:
-    KAFKA_AVAILABLE = False
-    AIOKafkaProducer = None
+from aiokafka import AIOKafkaProducer
 
 logger = logging.getLogger(__name__)
 
@@ -75,11 +70,12 @@ class KafkaProducer:
     - Channel messages
     - Escalations
     - Metrics
+    
+    Requires a running Kafka instance (localhost:9092).
     """
     
     _instance = None
     _producer = None
-    _mock_mode = False
     
     def __new__(cls):
         if cls._instance is None:
@@ -88,28 +84,13 @@ class KafkaProducer:
     
     def __init__(self):
         if not hasattr(self, 'initialized'):
-            self._initialize()
-    
-    def _initialize(self):
-        """Initialize Kafka producer."""
-        if not KAFKA_AVAILABLE:
-            logger.warning("Kafka not available, using mock mode")
-            self._mock_mode = True
+            self.bootstrap_servers = "localhost:9092"
+            self._producer = None
             self.initialized = True
-            return
-        
-        self.bootstrap_servers = "localhost:9092"
-        self._producer = None
-        self._mock_mode = False
-        self.initialized = True
-        logger.info("✓ Kafka producer initialized")
+            logger.info("Kafka producer initialized")
     
     async def start(self):
         """Start the Kafka producer."""
-        if self._mock_mode:
-            logger.info("Kafka producer in mock mode")
-            return
-        
         if self._producer is None:
             self._producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
@@ -117,7 +98,7 @@ class KafkaProducer:
                 key_serializer=lambda k: k.encode('utf-8') if k else None
             )
             await self._producer.start()
-            logger.info("✓ Kafka producer started")
+            logger.info("Kafka producer started")
     
     async def stop(self):
         """Stop the Kafka producer."""
@@ -135,10 +116,6 @@ class KafkaProducer:
             message: Message dict to publish
             key: Optional message key for partitioning
         """
-        if self._mock_mode:
-            logger.debug(f"[MOCK] Published to {topic}: {message}")
-            return
-        
         if not self._producer:
             await self.start()
         
@@ -151,7 +128,6 @@ class KafkaProducer:
             logger.debug(f"Published to {topic}")
         except Exception as e:
             logger.error(f"Failed to publish to {topic}: {e}")
-            # Send to DLQ
             await self._publish_to_dlq(topic, message, str(e))
     
     async def publish_ticket(self, ticket_data: Dict[str, Any]):

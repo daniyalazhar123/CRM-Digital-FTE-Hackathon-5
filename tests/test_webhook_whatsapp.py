@@ -184,8 +184,8 @@ class TestWhatsAppHandlerUnit:
         assert result['customer_phone'] == '+14155551234'
         assert result['content'] == 'Test message'
     
-    def test_send_message_mock(self):
-        """Test send_message in mock mode."""
+    def test_send_message_no_twilio(self):
+        """Test send_message returns error dict without Twilio config."""
         from channels.whatsapp_handler import WhatsAppHandler
         import asyncio
         
@@ -196,7 +196,9 @@ class TestWhatsAppHandlerUnit:
             body='Test body'
         ))
         
-        assert 'delivery_status' in result
+        assert result['delivery_status'] == 'failed'
+        assert 'error' in result
+        assert 'Twilio not configured' in result['error']
     
     def test_manual_signature_validation(self):
         """Test manual signature validation method."""

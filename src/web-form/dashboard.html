@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #1a1d27 0%, #161922 100%);
+      border-bottom: 1px solid #2d2f3a;
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      background: linear-gradient(90deg, #58a6ff, #3fb950);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #3fb950;
+    }
+    .status-dot.error { background: #f85149; }
+    .status-dot.warning { background: #d29922; }
+    .last-refresh {
+      font-size: 12px;
+      color: #6e7681;
+    }
+    .container { max-width: 1280px; margin: 0 auto; padding: 24px 32px; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #1a1d27;
+      border: 1px solid #2d2f3a;
+      border-radius: 10px;
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+    .stat-card:hover { border-color: #58a6ff; }
+    .stat-card .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6e7681;
+      margin-bottom: 8px;
+    }
+    .stat-card .value {
+      font-size: 32px;
+      font-weight: 700;
+    }
+    .stat-card .value.blue { color: #58a6ff; }
+    .stat-card .value.green { color: #3fb950; }
+    .stat-card .value.yellow { color: #d29922; }
+    .stat-card .value.red { color: #f85149; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .panel {
+      background: #1a1d27;
+      border: 1px solid #2d2f3a;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .panel h2 {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6e7681;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #2d2f3a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #6e7681;
+      padding: 8px 12px;
+      border-bottom: 1px solid #2d2f3a;
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #1c1e28;
+      font-size: 14px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1e2130; }
+    .channel-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .channel-email { background: #1a3a5c; color: #58a6ff; }
+    .channel-whatsapp { background: #1a3a2a; color: #3fb950; }
+    .channel-web { background: #3a2a1a; color: #d29922; }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .status-open { background: #1a3a5c; color: #58a6ff; }
+    .status-resolved { background: #1a3a2a; color: #3fb950; }
+    .status-escalated { background: #3a1a1a; color: #f85149; }
+    .ticket-list {
+      list-style: none;
+    }
+    .ticket-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #1c1e28;
+    }
+    .ticket-item:last-child { border-bottom: none; }
+    .ticket-id { font-weight: 600; color: #58a6ff; font-size: 13px; }
+    .ticket-subject { color: #e1e4e8; font-size: 13px; margin: 2px 0; }
+    .ticket-meta { font-size: 11px; color: #6e7681; }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #6e7681;
+    }
+    .loading .spinner {
+      display: inline-block;
+      width: 24px; height: 24px;
+      border: 3px solid #2d2f3a;
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-banner {
+      background: #3a1a1a;
+      border: 1px solid #f85149;
+      color: #f85149;
+      padding: 12px 20px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .row { grid-template-columns: 1fr; }
+      .container { padding: 16px; }
+      .header { padding: 16px; flex-direction: column; gap: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>CRM Digital FTE — Dashboard</h1>
+    <div class="header-status">
+      <span class="status-dot" id="healthDot"></span>
+      <span id="healthLabel" style="font-size:13px;color:#6e7681;">Checking...</span>
+      <span class="last-refresh" id="refreshLabel"></span>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="errorContainer"></div>
+
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card"><div class="label">Total Tickets</div><div class="value blue" id="statTotal">--</div></div>
+      <div class="stat-card"><div class="label">Open</div><div class="value yellow" id="statOpen">--</div></div>
+      <div class="stat-card"><div class="label">Resolved</div><div class="value green" id="statResolved">--</div></div>
+      <div class="stat-card"><div class="label">Escalated</div><div class="value red" id="statEscalated">--</div></div>
+    </div>
+
+    <div class="row">
+      <div class="panel" id="channelPanel">
+        <h2>Channel Breakdown</h2>
+        <div class="loading" id="channelLoading">
+          <div class="spinner"></div>
+          <div>Loading channels...</div>
+        </div>
+        <table id="channelTable" style="display:none;">
+          <thead><tr><th>Channel</th><th>Conversations</th><th>Avg Sentiment</th><th>Escalations</th></tr></thead>
+          <tbody id="channelBody"></tbody>
+        </table>
+      </div>
+      <div class="panel" id="ticketPanel">
+        <h2>Recent Tickets</h2>
+        <div class="loading" id="ticketLoading">
+          <div class="spinner"></div>
+          <div>Loading tickets...</div>
+        </div>
+        <ul class="ticket-list" id="ticketList" style="display:none;"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:8000';
+
+    function showError(msg) {
+      const el = document.getElementById('errorContainer');
+      el.innerHTML = `<div class="error-banner">${msg}</div>`;
+    }
+
+    function clearError() {
+      document.getElementById('errorContainer').innerHTML = '';
+    }
+
+    function updateHealth(healthy) {
+      const dot = document.getElementById('healthDot');
+      const label = document.getElementById('healthLabel');
+      dot.className = 'status-dot' + (healthy ? '' : ' error');
+      label.textContent = healthy ? 'API Online' : 'API Offline';
+    }
+
+    function updateRefreshTime() {
+      document.getElementById('refreshLabel').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    }
+
+    async function fetchHealth() {
+      try {
+        const r = await fetch(API_BASE + '/health');
+        if (!r.ok) throw new Error('Status ' + r.status);
+        const data = await r.json();
+        updateHealth(data.status === 'healthy');
+        return data;
+      } catch (e) {
+        updateHealth(false);
+        showError('Cannot connect to API at ' + API_BASE + '. Make sure the server is running.');
+        throw e;
+      }
+    }
+
+    async function fetchChannelMetrics() {
+      const r = await fetch(API_BASE + '/metrics/channels');
+      if (!r.ok) throw new Error('Status ' + r.status);
+      return r.json();
+    }
+
+    async function fetchTickets() {
+      const r = await fetch(API_BASE + '/metrics/summary');
+      if (!r.ok) throw new Error('Status ' + r.status);
+      return r.json();
+    }
+
+    function renderStats(metrics) {
+      document.getElementById('statTotal').textContent = metrics.total_tickets ?? '--';
+      document.getElementById('statOpen').textContent = metrics.open_tickets ?? '--';
+      document.getElementById('statResolved').textContent = metrics.resolved_tickets ?? '--';
+      document.getElementById('statEscalated').textContent = metrics.escalated_tickets ?? '--';
+    }
+
+    function renderChannels(channels) {
+      const loading = document.getElementById('channelLoading');
+      const table = document.getElementById('channelTable');
+      const body = document.getElementById('channelBody');
+
+      const channelMap = { email: channels.email, whatsapp: channels.whatsapp, web_form: channels.web_form };
+      const rows = [
+        { key: 'email', label: 'Email', badge: 'channel-email' },
+        { key: 'whatsapp', label: 'WhatsApp', badge: 'channel-whatsapp' },
+        { key: 'web_form', label: 'Web Form', badge: 'channel-web' },
+      ];
+
+      body.innerHTML = rows.map(r => {
+        const d = channelMap[r.key] || {};
+        return `<tr>
+          <td><span class="channel-badge ${r.badge}">${r.label}</span></td>
+          <td>${d.total_conversations ?? 0}</td>
+          <td>${d.avg_sentiment != null ? d.avg_sentiment.toFixed(2) : '--'}</td>
+          <td>${d.escalations ?? 0}</td>
+        </tr>`;
+      }).join('');
+
+      loading.style.display = 'none';
+      table.style.display = '';
+    }
+
+    function renderTickets(metrics) {
+      const loading = document.getElementById('ticketLoading');
+      const list = document.getElementById('ticketList');
+
+      const sampleTickets = [
+        { id: 'Live', subject: 'System is running — ' + metrics.total_tickets + ' tickets processed', channel: 'web', status: 'open' },
+        { id: 'ES', subject: 'Escalation rate: ' + (metrics.escalation_rate * 100).toFixed(1) + '%', channel: 'email', status: 'escalated' },
+        { id: 'RT', subject: 'Avg response time: ' + metrics.avg_response_time_ms + 'ms', channel: 'whatsapp', status: 'resolved' },
+      ];
+
+      list.innerHTML = sampleTickets.map(t => {
+        const ch = t.channel === 'web' ? 'channel-web' : t.channel === 'email' ? 'channel-email' : 'channel-whatsapp';
+        const st = t.status === 'open' ? 'status-open' : t.status === 'resolved' ? 'status-resolved' : 'status-escalated';
+        return `<li class="ticket-item">
+          <div>
+            <div class="ticket-id">${t.id}</div>
+            <div class="ticket-subject">${t.subject}</div>
+          </div>
+          <div>
+            <span class="status-badge ${st}">${t.status}</span>
+          </div>
+        </li>`;
+      }).join('');
+
+      loading.style.display = 'none';
+      list.style.display = '';
+    }
+
+    async function refreshAll() {
+      try {
+        clearError();
+        await fetchHealth();
+        const [channels, metrics] = await Promise.all([
+          fetchChannelMetrics(),
+          fetchTickets()
+        ]);
+        renderStats(metrics);
+        renderChannels(channels);
+        renderTickets(metrics);
+        updateRefreshTime();
+      } catch (e) {
+        console.error('Refresh failed:', e);
+      }
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 30000);
+  </script>
+</body>
+</html>

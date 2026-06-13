@@ -157,8 +157,35 @@ class CRMDatabase:
     """
     PostgreSQL database layer matching InMemoryStore interface.
     Provides CRUD operations for customers, tickets, messages, and embeddings.
-    """
     
+    Falls back to in-memory dict-based storage if PostgreSQL is unavailable.
+    Set USE_FALLBACK=true in .env to force fallback mode.
+    """
+
+    def __init__(self):
+        self._fallback = None
+        use_fallback_env = os.getenv('USE_FALLBACK', '').lower()
+        if use_fallback_env in ('true', '1', 'yes'):
+            print("Using in-memory fallback database (USE_FALLBACK=true)")
+            self._fallback = _FallbackDB()
+        else:
+            try:
+                pool = get_db_pool()
+                conn = pool.get_connection()
+                pool.release_connection(conn)
+            except Exception as e:
+                print(f"PostgreSQL unavailable ({e}), using in-memory fallback database")
+                print("Set USE_FALLBACK=false or start PostgreSQL for production mode.")
+                self._fallback = _FallbackDB()
+
+    def __getattribute__(self, name):
+        if name == '_fallback':
+            return super().__getattribute__(name)
+        fallback = super().__getattribute__('_fallback')
+        if fallback is not None and hasattr(fallback, name):
+            return getattr(fallback, name)
+        return super().__getattribute__(name)
+
     # -------------------------------------------------------------------------
     # CUSTOMER OPERATIONS
     # -------------------------------------------------------------------------
@@ -555,6 +582,185 @@ class CRMDatabase:
     def close(self):
         """Close database connections."""
         get_db_pool().close_all()
+
+
+# =============================================================================
+# FALLBACK DATABASE (In-Memory, used when PostgreSQL is unavailable)
+# =============================================================================
+
+class _FallbackDB:
+    """In-memory dict-based database for development when PostgreSQL is unavailable."""
+
+    def __init__(self):
+        self.customers = {}
+        self.tickets = {}
+        self.messages = []
+        self.embeddings = []
+        self._next_ticket_num = 1
+
+    def _gen_uuid(self):
+        import uuid
+        return str(uuid.uuid4())
+
+    def _gen_ticket_id(self):
+        ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        n = self._next_ticket_num
+        self._next_ticket_num += 1
+        return f"TKT-{ts}-{n:04d}"
+
+    def get_or_create_customer(self, email=None, phone=None, name=None):
+        for c in self.customers.values():
+            if email and c.get('email') == email:
+                if phone and not c.get('phone'):
+                    c['phone'] = phone
+                return dict(c)
+            if phone and c.get('phone') == phone:
+                if email and not c.get('email'):
+                    c['email'] = email
+                return dict(c)
+        cid = self._gen_uuid()
+        customer = {
+            'id': cid, 'email': email, 'phone': phone,
+            'name': name, 'plan': 'free',
+            'created_at': datetime.utcnow(),
+            'metadata': '{}'
+        }
+        self.customers[cid] = customer
+        return dict(customer)
+
+    def get_customer_by_id(self, customer_id):
+        c = self.customers.get(customer_id)
+        return dict(c) if c else None
+
+    def create_ticket(self, customer_id, issue, priority, channel):
+        tid = self._gen_ticket_id()
+        ticket = {
+            'id': tid, 'customer_id': customer_id, 'issue': issue,
+            'priority': priority, 'channel': channel, 'status': 'open',
+            'escalated': False, 'escalation_reason': None,
+            'created_at': datetime.utcnow(), 'resolved_at': None
+        }
+        self.tickets[tid] = ticket
+        return dict(ticket)
+
+    def get_ticket(self, ticket_id):
+        t = self.tickets.get(ticket_id)
+        return dict(t) if t else None
+
+    def escalate_ticket(self, ticket_id, reason):
+        t = self.tickets.get(ticket_id)
+        if t:
+            t['escalated'] = True
+            t['escalation_reason'] = reason
+            t['status'] = 'escalated'
+            return True
+        return False
+
+    def resolve_ticket(self, ticket_id):
+        t = self.tickets.get(ticket_id)
+        if t:
+            t['status'] = 'resolved'
+            t['resolved_at'] = datetime.utcnow()
+            return True
+        return False
+
+    def add_message(self, ticket_id, customer_id, role, content, channel, sentiment_score=None):
+        mid = self._gen_uuid()
+        msg = {
+            'id': mid, 'ticket_id': ticket_id, 'customer_id': customer_id,
+            'role': role, 'content': content, 'channel': channel,
+            'sentiment_score': sentiment_score,
+            'timestamp': datetime.utcnow()
+        }
+        self.messages.append(msg)
+        return dict(msg)
+
+    def get_customer_history(self, customer_id, limit=10):
+        results = [dict(m) for m in self.messages if m['customer_id'] == customer_id]
+        results.sort(key=lambda x: x['timestamp'], reverse=True)
+        return results[:limit]
+
+    def update_sentiment(self, customer_id, score):
+        c = self.customers.get(customer_id)
+        if not c:
+            return False
+        import json as _json
+        metadata = json.loads(c['metadata']) if isinstance(c['metadata'], str) else (c.get('metadata') or {})
+        if 'sentiment_history' not in metadata:
+            metadata['sentiment_history'] = []
+        metadata['sentiment_history'].append({
+            'score': score, 'timestamp': datetime.utcnow().isoformat()
+        })
+        metadata['sentiment_history'] = metadata['sentiment_history'][-20:]
+        scores = [s['score'] for s in metadata['sentiment_history']]
+        metadata['avg_sentiment'] = sum(scores) / len(scores)
+        c['metadata'] = json.dumps(metadata)
+        return True
+
+    def get_customer_stats(self, customer_id):
+        c = self.customers.get(customer_id)
+        if not c:
+            return _empty_stats_dict()
+        metadata = json.loads(c['metadata']) if isinstance(c['metadata'], str) else (c.get('metadata') or {})
+        customer_tickets = [t for t in self.tickets.values() if t['customer_id'] == customer_id]
+        customer_msgs = [m for m in self.messages if m['customer_id'] == customer_id]
+        sentiments = [m['sentiment_score'] for m in customer_msgs if m.get('sentiment_score') is not None]
+        channels = list(set(t['channel'] for t in customer_tickets if t.get('channel')))
+        avg_sent = sum(sentiments) / len(sentiments) if sentiments else metadata.get('avg_sentiment', 0.5)
+
+        return {
+            'customer_id': customer_id,
+            'customer_email': c.get('email'),
+            'customer_phone': c.get('phone'),
+            'total_tickets': len(customer_tickets),
+            'open_tickets': sum(1 for t in customer_tickets if t['status'] == 'open'),
+            'resolved_tickets': sum(1 for t in customer_tickets if t['status'] == 'resolved'),
+            'escalated_tickets': sum(1 for t in customer_tickets if t.get('escalated')),
+            'total_messages': len(customer_msgs),
+            'avg_sentiment': float(avg_sent),
+            'channels_used': channels,
+            'preferred_channel': channels[0] if channels else 'unknown',
+            'frustration_flag': metadata.get('frustration_flag', False),
+            'last_interaction': str(c.get('created_at', ''))
+        }
+
+    def store_embedding(self, content, embedding_vector, category=None, source=None):
+        eid = self._gen_uuid()
+        self.embeddings.append({
+            'id': eid, 'content': content, 'embedding': embedding_vector,
+            'category': category, 'source': source,
+            'created_at': datetime.utcnow()
+        })
+        return eid
+
+    def search_similar(self, query_vector, limit=5, category=None):
+        candidates = [e for e in self.embeddings if category is None or e.get('category') == category]
+        scored = []
+        for e in candidates:
+            import math
+            dot = sum(a * b for a, b in zip(query_vector, e['embedding']))
+            nq = math.sqrt(sum(x * x for x in query_vector)) or 1
+            ne = math.sqrt(sum(x * x for x in e['embedding'])) or 1
+            sim = dot / (nq * ne)
+            scored.append((sim, e))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [{'content': e['content'], 'category': e.get('category'), 'source': e.get('source'), 'similarity': s} for s, e in scored[:limit]]
+
+    def get_connection(self):
+        return None
+
+    def close(self):
+        pass
+
+
+def _empty_stats_dict():
+    return {
+        'customer_id': None, 'customer_email': None, 'customer_phone': None,
+        'total_tickets': 0, 'open_tickets': 0, 'resolved_tickets': 0,
+        'escalated_tickets': 0, 'total_messages': 0, 'avg_sentiment': 0.5,
+        'channels_used': [], 'preferred_channel': 'unknown',
+        'frustration_flag': False, 'last_interaction': None
+    }
 
 
 # =============================================================================

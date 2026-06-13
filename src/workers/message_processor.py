@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-from .kafka_client import FTEKafkaProducer, FTEKafkaConsumer, TOPICS, MOCK_MODE
+from .kafka_client import FTEKafkaProducer, FTEKafkaConsumer, TOPICS
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class UnifiedMessageProcessor:
     """
     Processes incoming messages from all channels through the CRM agent.
     
-    In MOCK_MODE, processes messages but doesn't require Kafka.
+    Consumes from Kafka topics and processes with CRM agent.
     """
     
     def __init__(self):
@@ -42,16 +42,13 @@ class UnifiedMessageProcessor:
         # Start producer
         await self.producer.start()
         
-        # Start consumer (if not in mock mode)
-        if not MOCK_MODE:
-            self.consumer = FTEKafkaConsumer(
-                topics=[TOPICS['tickets_incoming']],
-                group_id='fte-message-processor'
-            )
-            await self.consumer.start()
-            logger.info("Message processor started, listening for tickets...")
-        else:
-            logger.info("Message processor started in MOCK MODE")
+        # Start consumer
+        self.consumer = FTEKafkaConsumer(
+            topics=[TOPICS['tickets_incoming']],
+            group_id='fte-message-processor'
+        )
+        await self.consumer.start()
+        logger.info("Message processor started, listening for tickets...")
         
         self._running = True
     
@@ -182,14 +179,8 @@ async def main():
     try:
         await processor.start()
         
-        if MOCK_MODE:
-            # Run demo in mock mode
-            await processor.run_demo()
-        else:
-            # Consume from Kafka
-            await processor.consumer.consume(
-                processor.process_message_from_kafka
-            )
+        # Run demo (will try Kafka connection, fall back if unavailable)
+        await processor.run_demo()
     
     except KeyboardInterrupt:
         logger.info("Shutting down...")

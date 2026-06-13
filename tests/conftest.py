@@ -25,9 +25,15 @@ def db_conn(db_config):
     """
     Create a direct database connection for testing.
     Uses autocommit mode for test isolation.
+    Skips test if PostgreSQL is unavailable.
     """
-    conn = psycopg2.connect(**db_config)
-    conn.autocommit = True
+    try:
+        conn = psycopg2.connect(**db_config)
+        conn.autocommit = True
+    except psycopg2.OperationalError as e:
+        pytest.skip(f"PostgreSQL unavailable: {e}")
+        return
+    
     yield conn
     conn.close()
 

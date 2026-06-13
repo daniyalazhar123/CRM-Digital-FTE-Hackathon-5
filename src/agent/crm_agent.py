@@ -570,6 +570,11 @@ def process_message(customer_email: str, message: str, channel: str,
     """
     start_time = time.time()
     tool_calls_count = 0
+    ticket_id = None
+    customer_id = None
+    sentiment_score = 0.5
+    should_escalate = False
+    escalation_reason = None
     
     logger.info(f"Processing {channel} message from {customer_email}")
     
@@ -586,7 +591,7 @@ def process_message(customer_email: str, message: str, channel: str,
         
         logger.info(f"Customer: {customer_id}, Returning: {is_returning}")
         
-        # Step 2: Create ticket
+        # Step 2: Create ticket (ALWAYS first - preserves ticket_id on failure)
         ticket_result = create_ticket(CreateTicketInput(
             customer_email=customer_email,
             message=message,
@@ -632,7 +637,6 @@ def process_message(customer_email: str, message: str, channel: str,
             escalation = json.loads(escalate_result)
             tool_calls_count += 1
 
-            # Send escalation response
             response = escalation.get('message',
                 "I'm connecting you with a specialist who can better assist you.")
 
@@ -645,7 +649,6 @@ def process_message(customer_email: str, message: str, channel: str,
                 tool_calls_count += 1
             except Exception as resp_error:
                 logger.warning(f"Failed to send response: {resp_error}")
-                # Continue even if send fails
             
             response_time = (time.time() - start_time) * 1000
             
@@ -666,64 +669,80 @@ def process_message(customer_email: str, message: str, channel: str,
         search = json.loads(search_result)
         tool_calls_count += 1
         
-        # Generate response using Groq
-        if client and search.get('results') and len(search['results']) > 0:
-            kb_context = "\n\n".join([
-                f"**{r.get('title', 'Documentation')}**:\n{r.get('content', r.get('results', 'Information not found.'))}" 
-                for r in search['results'][:3]
-            ])
-            
-            try:
-                groq_response = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": f"Context:\n{kb_context}\n\nCustomer question: {message}"}
-                    ],
-                    max_tokens=500,
-                    temperature=0.7
-                )
-                
-                # Handle Groq response properly
-                if groq_response and groq_response.choices:
-                    response = groq_response.choices[0].message.content
-                else:
-                    response = f"Based on our documentation:\n\n{search['results'][0].get('content', search['results'][0].get('results', 'Information not found.'))}"
-                tool_calls_count += 1
-            except Exception as groq_error:
-                logger.warning(f"Groq API error: {groq_error}, using fallback response")
-                response = f"Based on our documentation:\n\n{search['results'][0].get('content', search['results'][0].get('results', 'Information not found.'))}"
-        else:
-            # Fallback response
-            if search.get('results') and len(search['results']) > 0:
-                response = f"Based on our documentation:\n\n{search['results'][0].get('content', search['results'][0].get('results', 'Information not found.'))}"
-            else:
-                response = "I found relevant information in our knowledge base. To add team members to your workspace:\n\n1. Navigate to your workspace settings\n2. Click on 'Members' or 'Team' section\n3. Click 'Invite Member' button\n4. Enter their email address\n5. Select their role/permission level\n6. Send invitation\n\nThe team member will receive an email invitation to join your workspace."
+        # Generate response using Groq (handle rate limit / 429 gracefully)
+        kb_context = "\n\n".join([
+            f"**{r.get('title', 'Documentation')}**:\n{r.get('content', r.get('results', 'Information not found.'))}" 
+            for r in search['results'][:3]
+        ]) if search.get('results') and len(search['results']) > 0 else "No relevant documentation found."
         
-        # Send response
         try:
-            response_result = send_response(SendResponseInput(
+            groq_response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Context:\n{kb_context}\n\nCustomer question: {message}"}
+                ],
+                max_tokens=500,
+                temperature=0.7
+            )
+            
+            if groq_response and groq_response.choices:
+                response = groq_response.choices[0].message.content
+            else:
+                response = None
+            tool_calls_count += 1
+        except Exception as llm_error:
+            logger.warning(f"Groq LLM error ({type(llm_error).__name__}): {llm_error}")
+            response = None
+        
+        # If LLM succeeded, send its response; otherwise send fallback
+        if response:
+            try:
+                response_result = send_response(SendResponseInput(
+                    ticket_id=ticket_id,
+                    response=response,
+                    channel=channel
+                ))
+                response_data = json.loads(response_result)
+                tool_calls_count += 1
+            except Exception as resp_error:
+                logger.warning(f"Failed to send response: {resp_error}")
+                response_data = {}
+            
+            response_time = (time.time() - start_time) * 1000
+            
+            return {
+                "response": response,
+                "ticket_id": ticket_id,
+                "escalated": False,
+                "escalation_reason": None,
+                "tool_calls_count": tool_calls_count,
+                "response_time_ms": response_time,
+                "char_count": response_data.get('char_count', len(response)),
+                "truncated": response_data.get('truncated', False)
+            }
+        
+        # LLM failed (429 rate limit, etc.) - use fallback without escalating
+        fallback_msg = "Our AI is busy, a human will assist you shortly."
+        try:
+            send_response(SendResponseInput(
                 ticket_id=ticket_id,
-                response=response,
+                response=fallback_msg,
                 channel=channel
             ))
-            response_data = json.loads(response_result)
             tool_calls_count += 1
         except Exception as resp_error:
-            logger.warning(f"Failed to send response: {resp_error}")
-            response_data = {}
+            logger.warning(f"Failed to send fallback response: {resp_error}")
         
         response_time = (time.time() - start_time) * 1000
         
         return {
-            "response": response,
+            "response": fallback_msg,
             "ticket_id": ticket_id,
             "escalated": False,
             "escalation_reason": None,
             "tool_calls_count": tool_calls_count,
-            "response_time_ms": response_time,
-            "char_count": response_data.get('char_count', len(response)),
-            "truncated": response_data.get('truncated', False)
+            "response_time_ms": response_time
         }
         
     except Exception as e:
@@ -731,10 +750,10 @@ def process_message(customer_email: str, message: str, channel: str,
         response_time = (time.time() - start_time) * 1000
         
         return {
-            "response": "I apologize, but I'm experiencing technical difficulties. A human agent will follow up shortly.",
-            "ticket_id": None,
-            "escalated": True,
-            "escalation_reason": "technical_error",
+            "response": "Our AI is busy, a human will assist you shortly.",
+            "ticket_id": ticket_id,
+            "escalated": should_escalate,
+            "escalation_reason": escalation_reason if should_escalate else None,
             "tool_calls_count": tool_calls_count,
             "response_time_ms": response_time,
             "error": str(e)
@@ -782,7 +801,7 @@ def run_tests():
     if not client:
         print("\n⚠️  WARNING: Groq API key not configured.")
         print("Set GROQ_API_KEY in .env file to enable LLM responses.")
-        print("Tests will run with fallback responses.\n")
+        print("LLM calls will fail without a valid API key.\n")
     
     results = []
     

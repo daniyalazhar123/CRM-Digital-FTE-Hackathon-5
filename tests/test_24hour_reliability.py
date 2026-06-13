@@ -1,8 +1,8 @@
 """
-CRM Digital FTE - 24-Hour Reliability Test (Accelerated with Mock Mode)
+CRM Digital FTE - 24-Hour Reliability Test (Accelerated)
 Phase 3: Integration & Testing — Exercise 3.2
 
-Simulates 24 hours of traffic in 5 minutes using mock mode for speed.
+Simulates 24 hours of traffic in accelerated time using real API calls.
 
 Requirements:
 - 500 messages across all channels (email, whatsapp, web_form)
