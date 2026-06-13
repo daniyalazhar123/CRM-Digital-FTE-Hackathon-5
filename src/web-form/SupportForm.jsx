@@ -19,11 +19,11 @@ const FORM_VERSION = '1.0';
 
 // Form categories matching backend validation
 const CATEGORIES = [
-  { value: 'how-to', label: 'How-To Question', icon: '❓' },
-  { value: 'technical', label: 'Technical Support', icon: '🔧' },
-  { value: 'billing', label: 'Billing Inquiry', icon: '💳' },
-  { value: 'bug-report', label: 'Bug Report', icon: '🐛' },
-  { value: 'other', label: 'Other', icon: '📝' }
+  { value: 'how-to', label: 'How-To Question' },
+  { value: 'technical', label: 'Technical Support' },
+  { value: 'billing', label: 'Billing Inquiry' },
+  { value: 'bug-report', label: 'Bug Report' },
+  { value: 'other', label: 'Other' }
 ];
 
 const PRIORITIES = [
@@ -300,7 +300,7 @@ function SupportForm({
 
     return (
       <p className="mt-1 text-sm text-red-600 flex items-center">
-        <span className="mr-1">⚠️</span> {error}
+         <span className="mr-1">!</span> {error}
       </p>
     );
   };
@@ -333,14 +333,14 @@ function SupportForm({
               {ticketId}
             </p>
             <p className="text-xs text-gray-500 mt-2">
-              📧 Save this for your records
+              Save this for your records
             </p>
           </div>
 
           {/* Expected Response Time */}
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
             <p className="text-sm text-gray-700">
-              <span className="font-semibold">⏱️ Expected Response Time:</span> 
+               <span className="font-semibold">Expected Response Time:</span> 
               {' '}Usually within 5 minutes during business hours
             </p>
             <p className="text-xs text-gray-500 mt-2">
@@ -436,7 +436,7 @@ function SupportForm({
       {/* Global Error */}
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 flex items-start">
-          <span className="mr-2 text-lg">❌</span>
+          <span className="mr-2 text-lg text-red-500">!</span>
           <span>{error}</span>
         </div>
       )}
@@ -539,7 +539,7 @@ function SupportForm({
             >
               {CATEGORIES.map(cat => (
                 <option key={cat.value} value={cat.value}>
-                  {cat.icon} {cat.label}
+                  {cat.label}
                 </option>
               ))}
             </select>
@@ -610,7 +610,7 @@ function SupportForm({
         {/* Info Box */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-800">
-            <span className="font-semibold">ℹ️ What happens next?</span>
+             <span className="font-semibold">What happens next?</span>
             <br />
             1. Our AI assistant will analyze your request immediately
             <br />
@@ -656,21 +656,5 @@ function SupportForm({
   );
 }
 
-// =============================================================================
-// MOUNT COMPONENT
-// =============================================================================
-
-// Mount the React component when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  const rootElement = document.getElementById('root');
-  
-  if (rootElement) {
-    const root = ReactDOM.createRoot(rootElement);
-    root.render(<SupportForm />);
-  }
-});
-
-// Export for module systems (optional)
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = SupportForm;
-}
+// Export for CDN / browser usage
+window.SupportForm = SupportForm;
