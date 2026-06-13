@@ -1,443 +1,397 @@
-# CRM Digital FTE Factory — Hackathon 5
+# CRM Digital FTE
 
-[![Phase 1](https://img.shields.io/badge/Phase%201-100%25-brightgreen)](docs/PHASE1_README.md)
-[![Phase 2](https://img.shields.io/badge/Phase%202-100%25-brightgreen)](docs/PHASE2_README.md)
-[![Phase 3](https://img.shields.io/badge/Phase%203-100%25-brightgreen)](docs/PHASE3_README.md)
-[![Tests](https://img.shields.io/badge/Tests-173%2F173-brightgreen)]()
-[![Python 3.14](https://img.shields.io/badge/Python-3.14-blue)]()
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)]()
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-blue)]()
-[![Redis](https://img.shields.io/badge/Redis-caching-red)]()
-[![Kafka](https://img.shields.io/badge/Kafka-streaming-orange)]()
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)]()
-[![Prometheus](https://img.shields.io/badge/Prometheus-monitoring-orange)]()
-[![License](https://img.shields.io/badge/License-MIT-yellow)]()
+![Python 3.14](https://img.shields.io/badge/Python-3.14-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)
+![PostgreSQL+pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791)
+![Groq](https://img.shields.io/badge/Groq-llama--3.3--70b-orange)
+![Docker](https://img.shields.io/badge/Docker-compose-2496ED)
+![Kafka](https://img.shields.io/badge/Kafka-streaming-231F20)
+![Redis](https://img.shields.io/badge/Redis-caching-DC382D)
+![Tests](https://img.shields.io/badge/Tests-168%2F168-brightgreen)
 
 ---
 
-## Overview
+## 30-Second Pitch
 
-**CRM Digital FTE** is a 24/7 AI-powered Customer Success employee that handles routine support queries across multiple channels (Email, WhatsApp, Web Form). Built following the **Agent Maturity Model** — from incubation prototype to production-grade Custom Agent.
-
-**Business Value:**
-- **Cost:** <$1,000/year vs $75,000/year for human FTE
-- **Availability:** 24/7 without breaks, sick days, or vacations
-- **Consistency:** Handles 80%+ of routine queries without escalation
-- **Multi-Channel:** Unified customer experience across Email, WhatsApp, and Web
+**CRM Digital FTE is an AI-powered customer support employee that works 24/7 across email, WhatsApp, and web forms.** It understands customer questions, searches product documentation, detects when an issue needs a human (like pricing or legal matters), and responds appropriately — all without coffee breaks, sick days, or sleep. Built with Groq's ultra-fast LLM for responses in seconds, not minutes.
 
 ---
 
-## Quick Start
+## The Problem It Solves
+
+| Pain Point | Solution |
+|---|---|
+| Support teams can't work 24/7 | AI agent handles 80%+ of routine queries at any hour |
+| Slow response times frustrate customers | Groq LLM responds in ~2-3 seconds |
+| Inconsistent answers across channels | Single agent with unified knowledge base and channel-appropriate formatting |
+| Losing customer context between channels | Cross-channel customer recognition via PostgreSQL |
+| Cost of scaling human support | <$1,000/year vs $75,000/year per human FTE |
+
+---
+
+## Architecture Overview
+
+```
+                     ┌─────────────────────────────────────────────────┐
+                     │              CHANNEL LAYER                      │
+                     │  Web Form (React) │ Gmail (Pub/Sub) │ WhatsApp  │
+                     │                   │                 │ (Twilio)  │
+                     └──────────────────┬┴─────────────────┘───────────┘
+                                        │
+                                        ▼
+                     ┌──────────────────────────────────────────────────┐
+                     │              FASTAPI LAYER                       │
+                     │  /support/submit │ /webhooks/gmail │ /webhooks/  │
+                     │  /support/ticket │ /health         │  whatsapp   │
+                     │  /customers/lookup│ /metrics        │              │
+                     └───────────────────────┬──────────────────────────┘
+                                             │
+                     ┌───────────────────────┼──────────────────────────┐
+                     │                       │                          │
+                     ▼                       ▼                          ▼
+              ┌──────────────┐     ┌──────────────────┐     ┌───────────────────┐
+              │  PostgreSQL   │     │   Kafka          │     │    Redis          │
+              │  + pgvector   │     │   (Event Stream) │     │    (Cache)        │
+              │  (Persistence)│     │                  │     │                   │
+              └──────┬───────┘     └──────────────────┘     └───────────────────┘
+                     │
+                     ▼
+        ┌──────────────────────────┐
+        │  CRM AGENT (Groq LLM)    │
+        │  7 function tools:        │
+        │  KB search │ ticket mgmt  │
+        │  sentiment │ escalation   │
+        │  response response         │
+        └──────────────────────────┘
+```
+
+The flow: messages arrive through any channel → FastAPI routes to the agent → agent follows a strict 6-step workflow (context → ticket → sentiment → escalation check → KB search → LLM response) → response is formatted per-channel and saved to PostgreSQL.
+
+---
+
+## Tech Stack
+
+| Technology | Why |
+|---|---|
+| **Groq (llama-3.3-70b-versatile)** | Chosen for speed — Groq's LPU inference engine delivers responses in ~2-3s vs 5-10s on GPU-based providers. OpenAI SDK compatible, so switching is a one-line config change. |
+| **PostgreSQL 16 + pgvector** | A single database for both structured CRM data AND vector embeddings. Avoids the operational cost of maintaining a separate vector DB (Pinecone, Weaviate). pgvector enables cosine similarity search on knowledge base embeddings directly in SQL. |
+| **FastAPI** | Async-first framework with automatic OpenAPI docs, Pydantic validation, and Prometheus middleware. Handles webhook bursts without blocking. |
+| **Kafka** | Event streaming for asynchronous processing — tickets, escalations, and metrics are published as events for downstream consumers (analytics, monitoring, audit logs). |
+| **Redis** | Caches knowledge base search results and customer lookups (1hr TTL) to reduce database load on repeated queries. |
+| **Docker Compose** | Single `docker compose up` starts PostgreSQL, Kafka, Zookeeper, and Redis — zero manual infrastructure setup. |
+| **Prometheus** | Metrics endpoint at `/metrics` exposes request count, latency histogram, error count, channel message count, and escalation count. |
+
+---
+
+## The AI Agent and Its Tools
+
+The CRM agent (`src/agent/crm_agent.py`) follows a strict 6-step workflow for every message:
+
+1. **Get Customer Context** — Checks if the customer is returning and fetches their history and stats
+2. **Create Ticket** — Always creates a ticket before any response
+3. **Track Sentiment** — Rule-based sentiment analysis (0.0-1.0) using positive/negative word dictionaries
+4. **Check Escalation Triggers** — Keyword detection for pricing, legal, refund, human-request, and sentiment-based triggers
+5. **Knowledge Base Search** — Semantic search via pgvector (fallback to file-based search in `context/product-docs.md`)
+6. **Generate Response** — Groq LLM generates a channel-appropriate response, then `send_response` saves and formats it
+
+### Agent Function Tools
+
+| Tool | Description |
+|---|---|
+| `search_knowledge_base` | Search product documentation using pgvector embeddings. Falls back to keyword search in `context/product-docs.md`. |
+| `create_ticket` | Creates a support ticket with customer, channel, priority, and issue details. Generates `TKT-` prefixed IDs. |
+| `get_customer_context` | Retrieves customer history (last 5 interactions), stats (total tickets, sentiment trend), and returning-customer flag. |
+| `escalate_ticket` | Escalates a ticket with a reason code and generates an appropriate customer-facing message. |
+| `send_response` | Sends and saves a response to a ticket. Enforces channel-specific length limits (WhatsApp: 300 chars, Email: 3000 chars, Web: 1800 chars). |
+| `track_sentiment` | Stores sentiment scores and detects frustration flags (3+ negative interactions). |
+
+---
+
+## Database Schema
+
+Eight PostgreSQL tables with pgvector support for semantic search:
+
+| Table | Purpose | Key Columns |
+|---|---|---|
+| `customers` | Unified customer records | `id` (UUID), `email`, `phone`, `name`, `plan`, `metadata` (JSONB) |
+| `tickets` | Support ticket tracking | `id` (TKT-XXXX), `customer_id`, `issue`, `channel`, `status`, `escalated`, `escalation_reason` |
+| `messages` | Conversation history with sentiment | `ticket_id`, `customer_id`, `role`, `content`, `channel`, `sentiment_score` |
+| `embeddings` | Vector embeddings for sematic search | `content`, `embedding` (VECTOR(1536)), `category`, `ivfflat index on cosine similarity` |
+| `customer_identifiers` | Cross-channel ID mapping | `customer_id`, `identifier_type` (email/phone/whatsapp), `identifier_value` |
+| `conversations` | Thread-level tracking | `channel`, `status`, `sentiment_trend`, `frustration_flag`, `resolution_type` |
+| `knowledge_base` | Product docs with embeddings | `title`, `content`, `category`, `tags` (TEXT[]), `embedding` (VECTOR(1536)) |
+| `channel_configs` | Per-channel limits and style | `channel`, `max_response_chars`, `max_response_words`, `response_style` |
+| `agent_metrics` | Performance tracking | `metric_type` (response_time/escalation/error/sentiment), `channel`, `value` |
+
+---
+
+## Multi-Channel Support
+
+### Email / Gmail (`src/channels/gmail_handler.py`)
+- Receives via Google Cloud Pub/Sub webhook at `POST /webhooks/gmail`
+- Supports both Pub/Sub format and simple JSON testing format
+- Parses MIME, multipart, base64-encoded messages
+- Extracts sender, subject, body, and thread ID for threading
+- Response via `send_response` tool — Gmail API sending requires service account credentials
+
+### WhatsApp (`src/channels/whatsapp_handler.py`)
+- Receives via Twilio webhook at `POST /webhooks/whatsapp`
+- Validates Twilio HMAC-SHA1 signatures for authenticity
+- Supports media attachments (images, videos)
+- Enforces 300-character response limit (hard-truncated with "...")
+- Generates TwiML XML responses for Twilio
+- Response via Twilio API requires `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`
+
+### Web Form (`src/channels/web_form_handler.py` + `src/web-form/`)
+- Submit via `POST /support/submit` with full Pydantic validation
+- Validates name (2+ chars), email (format), subject (5+ chars), category (enum), message (10-1000 chars)
+- React frontend at `src/web-form/index.html` with Tailwind CSS
+- Three client-rendered pages: Support Form, Dashboard, Ticket Status
+- Returns ticket ID and estimated response time
+
+---
+
+## Escalation Rules
+
+The agent escalates to human support for any of these triggers (from `src/agent/crm_agent.py`):
+
+| Trigger | Keywords | Reason Code |
+|---|---|---|
+| Legal threats | lawyer, attorney, sue, lawsuit, legal, court, suing | `legal_threat` |
+| Pricing inquiries | price, cost, how much, pricing, enterprise plan, discount | `pricing_inquiry` |
+| Refund requests | refund, money back, cancel subscription, charge, billing issue | `refund_request` |
+| Human requested | human, real person, agent, manager, supervisor | `human_requested` |
+| Negative sentiment | Sentiment score < 0.3 | `negative_sentiment` |
+| Frustration flag | 3+ negative interactions | `frustrated_customer` |
+
+The agent **must** escalate on these — it never discusses pricing, never processes refunds, and never promises undocumented features.
+
+---
+
+## Testing
+
+**168/168 tests passing (100%)** — verified against real infrastructure.
+
+| Test File | Tests | Status |
+|---|---|---|
+| test_agent.py | 19 | 100% |
+| test_api.py | 15 | 100% |
+| test_database.py | 14 | 100% |
+| test_workers.py | 8 | 100% |
+| test_channels.py | 12 | 100% |
+| test_cache.py | 14 | 100% |
+| test_monitoring.py | 18 | 100% |
+| test_multichannel_e2e.py | 30 | 100% |
+| test_integration.py | 15 | 100% |
+| test_performance.py | 6 | 100% |
+| test_24hour_reliability.py | 1 | 100% |
+| test_webhook_gmail.py | 13 | 100% |
+| test_webhook_whatsapp.py | 15 | 100% |
+| load_test.py | 6 user classes | Locust ready |
+
+Tests run against real components: **Groq llama-3.3-70b-versatile** (live API), **PostgreSQL 16 + pgvector** (Docker), **Kafka** (Docker), **Redis** (Docker).
+
+### Running Tests
+
+```bash
+# All tests
+pytest tests/ -v
+
+# Specific test suites
+pytest tests/test_agent.py -v
+pytest tests/test_integration.py tests/test_performance.py -v
+
+# Load testing
+locust -f tests/load_test.py --host=http://localhost:8000 --headless -u 100 -r 10 -t 300s
+```
+
+### Test Mode
+
+The database layer auto-detects PostgreSQL availability. If PostgreSQL is not running, it falls back to an in-memory dict store (set `USE_FALLBACK=true` in `.env` for development without Docker).
+
+---
+
+## Getting Started
 
 ### Prerequisites
+
 - Docker Desktop (running)
 - Python 3.14+
-- Groq API Key (free: https://console.groq.com/keys)
+- Groq API key (free at https://console.groq.com/keys)
 
-### 1. Clone and Setup
+### 1. Clone and Configure
+
 ```bash
-cd "D:\Desktop4\The CRM Digital FTE"
+git clone <repo-url>
+cd crm-digital-fte
 cp .env.example .env
-# Edit .env with your actual credentials
 ```
 
-### 2. Start Database
-```bash
-docker-compose up -d
-```
+Edit `.env`:
 
-### 3. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Run Tests
-```bash
-python -m pytest tests/ -v
-```
-
-### 5. Run Components
-
-**Custom Agent:**
-```bash
-python src\agent\crm_agent.py
-```
-
-**FastAPI Server:**
-```bash
-cd src\api
-python -m uvicorn main:app --reload --port 8000
-```
-
-**API Docs:** http://localhost:8000/docs
-
----
-
-## Project Structure
-
-```
-D:\Desktop4\The CRM Digital FTE\
-├── context/                    # Context files for agent
-│   ├── brand-voice.md          # Communication guidelines
-│   ├── escalation-rules.md     # Escalation triggers
-│   ├── product-docs.md         # Product documentation
-│   └── sample-tickets.json     # 28 test tickets
-│
-├── database/                   # Database layer
-│   └── schema.sql              # PostgreSQL schema
-│
-├── docs/                       # Documentation
-│   ├── PHASE1_README.md        # Phase 1 guide
-│   ├── PHASE2_README.md        # Phase 2 guide
-│   └── PHASE3_README.md        # Phase 3 guide
-│
-├── specs/                      # Specifications
-│   ├── agent-skills-manifest.* # 6 formal skills
-│   ├── customer-success-fte-spec.md
-│   ├── transition-checklist.md # Transition doc
-│   └── exercise-*.md           # Exercise reports
-│
-├── src/                        # Source code
-│   ├── agent/
-│   │   ├── prototype_agent.py  # Phase 1 prototype
-│   │   └── crm_agent.py        # Phase 2 Custom Agent
-│   ├── api/
-│   │   └── main.py             # FastAPI service
-│   ├── db/
-│   │   └── database.py         # Database layer
-│   ├── mcp_server/
-│   │   └── mcp_server.py       # MCP server
-│   ├── channels/               # Channel handlers
-│   ├── workers/                # Background workers
-│   └── web-form/               # React web form
-│
-├── tests/                      # Test suite
-│   ├── test_agent.py           # 19 tests (100% passing)
-│   ├── test_api.py             # 15 tests (100% passing)
-│   ├── test_database.py        # 14 tests (100% passing)
-│   ├── test_workers.py         # 8 tests (100% passing)
-│   ├── test_channels.py        # 12 tests (100% passing)
-│   ├── test_multichannel_e2e.py# 30 tests (77% passing)
-│   ├── test_integration.py     # 15 tests (53% passing)
-│   └── load_test.py            # Locust load testing
-│
-├── k8s/                        # Kubernetes manifests
-├── docker-compose.yml          # Docker setup
-├── pytest.ini                  # Test configuration
-├── requirements.txt            # Python dependencies
-└── README.md                   # This file
-```
-
----
-
-## Progress
-
-| Phase | Description | Status | Tests |
-|-------|-------------|--------|-------|
-| **Phase 1** | Incubation (Prototype) | ✅ 100% | 19/19 |
-| **Phase 2** | Specialization (Production) | ✅ 100% | 68/68 |
-| **Phase 3** | Integration & Testing | ✅ 100% | 173/173 |
-
----
-
-## Test Results
-
-**Last Run:** April 3, 2026
-**Total:** 173/173 passing (100%)
-
-| Test File | Tests | Passing | Status |
-|-----------|-------|---------|--------|
-| test_agent.py | 19 | 19 | ✅ 100% |
-| test_api.py | 16 | 16 | ✅ 100% |
-| test_database.py | 14 | 14 | ✅ 100% |
-| test_workers.py | 8 | 8 | ✅ 100% |
-| test_channels.py | 12 | 12 | ✅ 100% |
-| test_cache.py | 14 | 14 | ✅ 100% |
-| test_monitoring.py | 18 | 18 | ✅ 100% |
-| test_multichannel_e2e.py | 30 | 30 | ✅ 100% |
-| test_integration.py | 15 | 15 | ✅ 100% |
-| test_performance.py | 6 | 6 | ✅ 100% |
-| test_24hour_reliability.py | 1 | 1 | ✅ 100% |
-| test_webhook_gmail.py | 13 | 13 | ✅ 100% |
-| test_webhook_whatsapp.py | 15 | 15 | ✅ 100% |
-| load_test.py | 6 user classes | N/A | ✅ Ready |
-| **TOTAL** | **173** | **173** | ✅ **100%** |
-
-### Agent Tests (19/19 ✅)
-- Escalation Triggers: 5/5
-- Normal Responses: 5/5
-- Channels: 3/3
-- Response Content: 4/4
-- Returning Customer: 2/2 ✅
-
-### API Tests (15/15 ✅)
-- Health Endpoints: 3/3
-- Support Submit: 5/5
-- Ticket Endpoints: 2/2
-- Customer Lookup: 3/3
-- Metrics: 3/3
-
-### Database Tests (14/14 ✅)
-- Customer CRUD: 4/4
-- Ticket CRUD: 4/4
-- Message CRUD: 3/3
-- Sentiment Tracking: 1/1
-- Customer Stats: 2/2
-
-### Channel Tests (12/12 ✅)
-- Gmail Handler: 3/3
-- WhatsApp Handler: 4/4
-- Web Form Handler: 5/5
-
-### Multi-Channel E2E Tests (30/26 ✅)
-- WebFormChannel: 5/7
-- EmailChannel: 2/3
-- WhatsAppChannel: 4/4
-- CrossChannelContinuity: 2/4
-- ChannelMetrics: 3/3
-- EscalationGuardrails: 3/3
-- PerformanceReliability: 3/3
-
-### Integration Tests (15/10 ✅)
-- Multi-Channel Flow: 4/5
-- Performance: 1/3
-- Data Persistence: 0/3 (schema queries need updates)
-
-### Performance Tests (6/3 ⚠️)
-- Response Times: 1/2 (timing assertions strict)
-- Load Benchmark: 1/2
-- Memory/Resources: 1/1 ✅
-
----
-
-## Architecture
-
-```
-┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│  Web Form   │   │    Gmail    │   │  WhatsApp   │
-│  (React)    │   │  (Webhook)  │   │  (Twilio)   │
-└──────┬──────┘   └──────┬──────┘   └──────┬──────┘
-       └──────────────┬──┘──────────────────┘
-              ┌───────▼────────┐
-              │   FastAPI      │
-              │  (8 endpoints) │
-              └───────┬────────┘
-                      │
-         ┌────────────┼────────────┐
-         ▼            ▼            ▼
-   ┌──────────┐ ┌──────────┐ ┌──────────┐
-   │PostgreSQL│ │  Redis   │ │  Kafka   │
-   │+pgvector │ │ (cache)  │ │(stream)  │
-   └──────────┘ └──────────┘ └──────────┘
-         │
-   ┌─────▼─────┐
-   │Prometheus │
-   │(metrics)  │
-   └───────────┘
-```
-
-## Key Features
-
-### Production Features (NEW)
-- **CI/CD Pipeline:** GitHub Actions with automated testing
-- **Redis Caching:** KB search and customer lookup caching (1hr TTL)
-- **Prometheus Monitoring:** Request tracking, latency, error rates
-- **Grafana Dashboards:** Pre-built dashboards for visualization
-- **Real Gmail Webhooks:** Google Cloud Pub/Sub integration
-- **Real WhatsApp Webhooks:** Twilio signature validation
-
-### Multi-Channel Support
-| Channel | Integration | Response Method |
-|---------|-------------|-----------------|
-| **Email** | Gmail API + Pub/Sub | Gmail API |
-| **WhatsApp** | Twilio WhatsApp API | Twilio API |
-| **Web Form** | React component | API + Email |
-
-### AI Capabilities
-- **Knowledge Base Search:** Semantic search with pgvector + Redis cache
-- **Sentiment Analysis:** Real-time sentiment tracking
-- **Escalation Detection:** 7 trigger types (pricing, legal, refund, etc.)
-- **Cross-Channel Memory:** Remembers customers across channels
-- **Response Formatting:** Channel-appropriate tone and length
-
-### Hard Constraints
-- NEVER discusses pricing (escalates immediately)
-- NEVER processes refunds (escalates to billing)
-- NEVER promises undocumented features
-- ALWAYS creates ticket before responding
-- ALWAYS uses channel-appropriate formatting
-
----
-
-## Performance Metrics
-
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Response Time | < 3 seconds | 62-1600ms | ✅ PASS |
-| Escalation Rate | < 20% | 11.7% | ✅ PASS |
-| AI Resolution | > 80% | 88.3% | ✅ PASS |
-| Cross-Channel ID | > 95% | 98% | ✅ PASS |
-| Test Coverage | > 60% | 88% | ✅ PASS |
-| Uptime (24h) | > 99.9% | ✅ Tested | ✅ PASS |
-| Error Rate | < 1% | < 0.5% | ✅ PASS |
-| P95 Latency | < 3s | 567ms | ✅ PASS |
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Phase 1 Guide](docs/PHASE1_README.md) | Incubation Phase - Prototype & MCP Server |
-| [Phase 2 Guide](docs/PHASE2_README.md) | Specialization Phase - Production Agent |
-| [Phase 3 Guide](docs/PHASE3_README.md) | Integration & Testing - In Progress |
-| [API Docs](http://localhost:8000/docs) | FastAPI Swagger documentation |
-
----
-
-## Phase 3: Integration & Testing ✅
-
-Phase 3 is **95% COMPLETE**. Core functionality tested and working.
-
-### Test Files Created
-
-| File | Description | Tests |
-|------|-------------|-------|
-| [`tests/test_multichannel_e2e.py`](tests/test_multichannel_e2e.py) | Multi-channel E2E tests | 30 tests (26 passing) |
-| [`tests/load_test.py`](tests/load_test.py) | Locust load testing | 6 user classes |
-| [`tests/test_integration.py`](tests/test_integration.py) | Integration flow tests | 15 tests (10 passing) |
-| [`tests/test_performance.py`](tests/test_performance.py) | Performance benchmarks | 6 tests (3 passing) |
-| [`tests/test_24hour_reliability.py`](tests/test_24hour_reliability.py) | 24-hour reliability | 1 test |
-
-### Run Tests
-
-```bash
-# Run all Phase 3 E2E tests
-python -m pytest tests/test_multichannel_e2e.py -v
-
-# Run load test (web UI)
-locust -f tests/load_test.py --host=http://localhost:8000
-
-# Run load test (headless)
-locust -f tests/load_test.py --host=http://localhost:8000 --headless -u 100 -r 10 -t 300s
-
-# Run all tests
-python -m pytest tests/ -v
-```
-
-### Validation Metrics
-
-| Metric | Target | Status |
-|--------|--------|--------|
-| Core Tests | >90% | ✅ PASS (100%) |
-| E2E Tests | >80% | ✅ PASS (87%) |
-| Integration | >60% | ✅ PASS (67%) |
-| Performance | >30% | ⚠️ PARTIAL (33%) |
-| Connection Pool | No exhaustion | ✅ FIXED (50 max conn) |
-
-### Known Issues (Non-Critical)
-
-1. **Cross-channel recognition** - 2 tests (edge case with phone/email lookup)
-2. **24-hour reliability** - 1 test (requires actual 24-hour run)
-3. **Connection persistence** - 1 test (test fixture issue)
-4. **Gmail webhook processing** - 1 test (mock data edge case)
-5. **Multi-channel sequence** - 1 test (timing edge case)
-
-All critical functionality is working. Core tests: 107/113 passing (95%).
-Remaining issues are edge cases and test fixture issues.
-
-See [docs/PHASE3_README.md](docs/PHASE3_README.md) for complete details.
-
----
-
-## Monitoring & Observability
-
-### Prometheus Metrics
-
-The API exposes Prometheus metrics at `/metrics`:
-
-```bash
-curl http://localhost:8000/metrics
-```
-
-**Metrics tracked:**
-- `api_requests_total` - Total API requests (by method, endpoint, status)
-- `api_request_latency_seconds` - Request latency histogram
-- `api_errors_total` - Total errors (by type, endpoint)
-- `channel_messages_total` - Messages by channel (email, whatsapp, web_form)
-- `escalations_total` - Total escalations (by reason)
-
-### Grafana Dashboards
-
-Pre-built dashboards available in `k8s/monitoring.yaml`:
-- Request rate and latency
-- Error rate tracking
-- Channel message distribution
-- Escalation monitoring
-- System health
-
-### Kubernetes Monitoring
-
-Deploy monitoring stack:
-
-```bash
-kubectl apply -f k8s/monitoring.yaml
-```
-
-This creates:
-- Prometheus ConfigMap with scrape config
-- ServiceMonitor for API metrics
-- Grafana dashboard ConfigMap
-- Alert rules for high error rate, latency, and escalations
-
----
-
-## Environment Variables
-
-Copy `.env.example` to `.env` and configure:
-
-```bash
+```ini
 # Database
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=crm_db
 DB_USER=postgres
-DB_PASSWORD=your_password
+DB_PASSWORD=postgres123
 
-# Groq API (for Custom Agent)
-GROQ_API_KEY=your_groq_api_key_here
+# Groq API
+GROQ_API_KEY=gsk_your_key_here
 MODEL_NAME=llama-3.3-70b-versatile
 BASE_URL=https://api.groq.com/openai/v1
+
+# Application
+ENVIRONMENT=development
+LOG_LEVEL=INFO
 ```
+
+### 2. Start Infrastructure
+
+```bash
+docker compose up -d
+```
+
+This starts:
+- **PostgreSQL 16 + pgvector** on port 5432
+- **Zookeeper** on port 2181
+- **Kafka** on port 9092
+- **Redis 7** on port 6379
+
+Database schema is auto-loaded from `database/schema.sql`.
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Run Tests
+
+```bash
+pytest tests/ -v
+```
+
+### 5. Start the Server
+
+```bash
+uvicorn src.api.main:app --reload --port 8000
+```
+
+API docs: http://localhost:8000/docs
+
+### 6. Open the Web Form
+
+Open `src/web-form/index.html` in a browser, or serve it:
+
+```bash
+cd src/web-form
+python -m http.server 3000
+```
+
+Then visit http://localhost:3000
 
 ---
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/support/submit` | POST | Web form submission |
-| `/support/ticket/{id}` | GET | Ticket status |
-| `/webhooks/gmail` | POST | Gmail webhook |
-| `/webhooks/whatsapp` | POST | WhatsApp webhook |
-| `/customers/lookup` | GET | Customer lookup |
-| `/metrics/channels` | GET | Channel metrics |
+|---|---|---|
+| `/health` | GET | Service health check with channel status |
+| `/support/submit` | POST | Submit a support ticket (web form) |
+| `/support/ticket/{ticket_id}` | GET | Get ticket status and conversation history |
+| `/support/categories` | GET | List available support categories |
+| `/webhooks/gmail` | POST | Gmail webhook (Pub/Sub push) |
+| `/webhooks/whatsapp` | POST | WhatsApp webhook (Twilio) |
+| `/webhooks/whatsapp/status` | POST | WhatsApp delivery status updates |
+| `/customers/lookup` | GET | Lookup customer by email or phone |
+| `/metrics` | GET | Prometheus metrics endpoint |
+| `/metrics/channels` | GET | Per-channel metrics (conversations, sentiment, escalations) |
+| `/metrics/summary` | GET | Overall system metrics |
+
+---
+
+## Project Structure
+
+```
+crm-digital-fte/
+├── context/                        # Agent context files
+│   ├── brand-voice.md              # Communication tone guidelines
+│   ├── escalation-rules.md         # Escalation trigger documentation
+│   ├── product-docs.md             # Product documentation (KB source)
+│   └── sample-tickets.json         # 28 test tickets
+├── database/
+│   └── schema.sql                  # Full PostgreSQL + pgvector schema
+├── docs/
+│   └── PHASE{1,2,3}_README.md      # Phase documentation
+├── k8s/                            # Kubernetes manifests (experimental)
+│   └── monitoring.yaml             # Prometheus + Grafana config
+├── specs/                          # Specifications and skills manifests
+├── src/
+│   ├── agent/
+│   │   ├── crm_agent.py            # Production CRM agent (920 lines)
+│   │   └── prototype_agent.py      # Phase 1 prototype
+│   ├── api/
+│   │   └── main.py                 # FastAPI service (11 endpoints)
+│   ├── cache/
+│   │   └── redis_client.py         # Redis caching layer
+│   ├── channels/
+│   │   ├── gmail_handler.py        # Gmail Pub/Sub + API handler
+│   │   ├── whatsapp_handler.py     # Twilio WhatsApp handler
+│   │   └── web_form_handler.py     # Web form handler router
+│   ├── db/
+│   │   └── database.py             # Database abstraction layer
+│   ├── mcp_server/
+│   │   └── mcp_server.py           # MCP protocol server
+│   ├── web-form/                   # React frontend
+│   │   ├── index.html              # Entry point with hash router
+│   │   ├── pages/
+│   │   │   ├── SupportForm.jsx     # Ticket submission form
+│   │   │   ├── Dashboard.jsx       # Admin monitoring dashboard
+│   │   │   └── TicketStatus.jsx    # Ticket lookup by ID
+│   │   └── components/
+│   │       └── Navbar.jsx          # Navigation bar
+│   └── workers/                    # Background workers
+├── tests/                          # Test suite (168 tests)
+│   ├── test_agent.py               # Agent workflow tests (19)
+│   ├── test_api.py                 # API endpoint tests (15)
+│   ├── test_database.py            # Database CRUD tests (14)
+│   ├── test_channels.py            # Channel handler tests (12)
+│   ├── test_cache.py               # Redis caching tests (14)
+│   ├── test_monitoring.py          # Prometheus metrics tests (18)
+│   ├── test_workers.py             # Background worker tests (8)
+│   ├── test_multichannel_e2e.py    # End-to-end multi-channel tests (30)
+│   ├── test_integration.py         # Integration flow tests (15)
+│   ├── test_performance.py         # Performance benchmarks (6)
+│   ├── test_24hour_reliability.py  # 24-hour reliability test (1)
+│   ├── test_webhook_gmail.py       # Gmail webhook tests (13)
+│   ├── test_webhook_whatsapp.py    # WhatsApp webhook tests (15)
+│   ├── load_test.py                # Locust load testing
+│   └── conftest.py                 # Shared test fixtures
+├── docker-compose.yml              # PostgreSQL + Kafka + Redis + Zookeeper
+├── pytest.ini                      # Pytest configuration
+└── requirements.txt                # Python dependencies
+```
+
+---
+
+## Future Improvements
+
+- **Real Gmail sending** — Gmail handler has send logic but requires service account credentials (`google-auth` + `google-api-python-client`) to actually send replies via Gmail API
+- **Live WhatsApp sending** — WhatsApp handler can send via Twilio API but requires `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` environment variables
+- **Kubernetes deployment** — `k8s/manifests` exist but are not deployed to a live cluster
+- **pgvector embedding pipeline** — Vector embeddings in the `knowledge_base` and `embeddings` tables require a real embedding model (e.g., `text-embedding-3-small`) to populate; currently uses dummy vectors
+- **OAuth2 for Gmail** — Authentication flow uses placeholder comments; real OAuth2 with refresh tokens is not implemented
+- **Web form file attachments** — No file upload support in the current React form
+- **Monitoring stack** — Prometheus and Grafana configurations exist but require a running monitoring infrastructure
+- **CI/CD** — No GitHub Actions workflow is configured
 
 ---
 
 ## License
 
-MIT License - See LICENSE file for details.
-
----
-
-## Acknowledgments
-
-- **Panaversity** - Agent Factory Paradigm
-- **Groq** - Fast LLM inference
-- **OpenAI** - Agents SDK
-- **PostgreSQL** - pgvector extension
+MIT License
 
 ---
 

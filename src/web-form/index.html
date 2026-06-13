@@ -12,51 +12,40 @@
 <body class="bg-gray-950">
     <div id="root"></div>
 
-    <script type="text/babel" src="SupportForm.jsx"></script>
-    <script type="text/babel" src="Dashboard.jsx"></script>
+    <script type="text/babel" src="components/Navbar.jsx"></script>
+    <script type="text/babel" src="pages/SupportForm.jsx"></script>
+    <script type="text/babel" src="pages/Dashboard.jsx"></script>
+    <script type="text/babel" src="pages/TicketStatus.jsx"></script>
 
     <script type="text/babel">
       function App() {
         const [page, setPage] = React.useState(
-          window.location.hash === '#dashboard' ? 'dashboard' : 'form'
+          window.location.hash === '#dashboard' ? 'dashboard'
+            : window.location.hash === '#status' ? 'status'
+            : 'form'
         );
 
         React.useEffect(() => {
           const onHashChange = () => {
-            setPage(window.location.hash === '#dashboard' ? 'dashboard' : 'form');
+            const hash = window.location.hash.replace('#', '') || 'form';
+            setPage(hash);
           };
           window.addEventListener('hashchange', onHashChange);
           return () => window.removeEventListener('hashchange', onHashChange);
         }, []);
 
-        const navStyle = (active) =>
-          'px-4 py-2 text-sm font-medium rounded-lg transition-colors ' +
-          (active
-            ? 'bg-blue-600 text-white shadow-sm'
-            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800');
+        const navigate = (hash) => {
+          window.location.hash = hash;
+        };
 
         return (
           <div className="min-h-screen">
-            {/* Top nav */}
-            <div className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm">
-              <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-                <span className="text-sm font-bold bg-gradient-to-r from-blue-400 to-green-400 bg-clip-text text-transparent">
-                  CRM Digital FTE
-                </span>
-                <nav className="flex gap-2">
-                  <button className={navStyle(page === 'form')} onClick={() => { window.location.hash = 'form'; }}>
-                    Support Form
-                  </button>
-                  <button className={navStyle(page === 'dashboard')} onClick={() => { window.location.hash = 'dashboard'; }}>
-                    Dashboard
-                  </button>
-                </nav>
-              </div>
-            </div>
+            <Navbar currentPage={page} onNavigate={navigate} />
 
-            {/* Page content */}
             <div className="max-w-7xl mx-auto px-6 py-8">
-              {page === 'form' ? <SupportForm /> : <Dashboard />}
+              {page === 'form' && <SupportForm />}
+              {page === 'dashboard' && <Dashboard />}
+              {page === 'status' && <TicketStatus />}
             </div>
           </div>
         );

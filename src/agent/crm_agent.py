@@ -393,6 +393,7 @@ def send_response(params: SendResponseInput) -> str:
             "success": True,
             "char_count": len(response),
             "truncated": truncated,
+            "response": response,
             "delivery_status": "sent"
         })
         
@@ -676,13 +677,18 @@ def process_message(customer_email: str, message: str, channel: str,
         ]) if search.get('results') and len(search['results']) > 0 else "No relevant documentation found."
         
         try:
+            # Use smaller max_tokens for faster responses (channel-optimized)
+            token_limit = 300
+            if channel == 'whatsapp':
+                token_limit = 150
+
             groq_response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": f"Context:\n{kb_context}\n\nCustomer question: {message}"}
                 ],
-                max_tokens=500,
+                max_tokens=token_limit,
                 temperature=0.7
             )
             
@@ -708,6 +714,9 @@ def process_message(customer_email: str, message: str, channel: str,
             except Exception as resp_error:
                 logger.warning(f"Failed to send response: {resp_error}")
                 response_data = {}
+            
+            # Use the actual response text that was sent (may be truncated by send_response)
+            response = response_data.get('response', response)
             
             response_time = (time.time() - start_time) * 1000
             
