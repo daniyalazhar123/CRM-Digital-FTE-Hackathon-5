@@ -10,7 +10,7 @@ import os
 import sys
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -184,53 +184,8 @@ async def track_requests(request: Request, call_next):
 
 
 # =============================================================================
-# REQUEST/RESPONSE MODELS
+# RESPONSE MODELS
 # =============================================================================
-
-class SupportFormSubmission(BaseModel):
-    """Support form submission model."""
-    name: str
-    email: EmailStr
-    subject: str
-    category: str
-    message: str
-    priority: Optional[str] = "medium"
-    
-    @validator('name')
-    def name_must_not_be_empty(cls, v):
-        if not v or len(v.strip()) < 2:
-            raise ValueError('Name must be at least 2 characters')
-        return v.strip()
-    
-    @validator('message')
-    def message_must_have_content(cls, v):
-        if not v or len(v.strip()) < 10:
-            raise ValueError('Message must be at least 10 characters')
-        return v.strip()
-    
-    @validator('category')
-    def category_must_be_valid(cls, v):
-        valid_categories = ['billing', 'technical', 'how-to', 'bug-report', 'other']
-        if v not in valid_categories:
-            raise ValueError(f'Category must be one of: {valid_categories}')
-        return v
-
-
-class SupportFormResponse(BaseModel):
-    """Response model for form submission."""
-    ticket_id: str
-    message: str
-    estimated_response_time: str
-
-
-class TicketStatus(BaseModel):
-    """Ticket status response."""
-    ticket_id: str
-    status: str
-    messages: List[dict]
-    created_at: str
-    last_updated: str
-
 
 class CustomerInfo(BaseModel):
     """Customer information response."""
@@ -240,14 +195,6 @@ class CustomerInfo(BaseModel):
     name: Optional[str]
     total_tickets: int
     last_interaction: str
-
-
-class ChannelMetrics(BaseModel):
-    """Channel metrics response."""
-    channel: str
-    total_conversations: int
-    avg_sentiment: float
-    escalations: int
 
 
 # =============================================================================
@@ -262,7 +209,7 @@ async def health_check():
     """
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": "Customer Success FTE API",
         "version": "2.0.0",
         "channels": {
@@ -271,74 +218,6 @@ async def health_check():
             "web_form": "active"
         }
     }
-
-
-# =============================================================================
-# WEB FORM ENDPOINTS
-# =============================================================================
-
-@app.post("/support/submit", response_model=SupportFormResponse)
-async def submit_support_form(submission: SupportFormSubmission):
-    """
-    Handle support form submission.
-    
-    This endpoint:
-    1. Validates the submission
-    2. Creates a ticket in the system
-    3. Processes with CRM agent
-    4. Returns confirmation to user
-    """
-    try:
-        logger.info(f"Processing support form from {submission.email}")
-        
-        # Process with CRM agent
-        result = process_message(
-            customer_email=submission.email,
-            message=f"Subject: {submission.subject}\nCategory: {submission.category}\n\n{submission.message}",
-            channel="web_form",
-            customer_name=submission.name
-        )
-        
-        logger.info(f"Ticket created: {result['ticket_id']}")
-        
-        return SupportFormResponse(
-            ticket_id=result['ticket_id'],
-            message="Thank you for contacting us! Our AI assistant will respond shortly.",
-            estimated_response_time="Usually within 5 minutes"
-        )
-        
-    except Exception as e:
-        logger.error(f"Form submission error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/support/ticket/{ticket_id}")
-async def get_ticket_status(ticket_id: str):
-    """
-    Get status and conversation history for a ticket.
-    """
-    try:
-        ticket = db.get_ticket(ticket_id)
-        
-        if not ticket:
-            raise HTTPException(status_code=404, detail="Ticket not found")
-        
-        # Get messages
-        messages = db.get_customer_history(ticket['customer_id'], limit=20)
-        
-        return {
-            "ticket_id": ticket_id,
-            "status": ticket['status'],
-            "messages": messages,
-            "created_at": str(ticket['created_at']),
-            "last_updated": str(ticket.get('resolved_at') or ticket['created_at'])
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Get ticket error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =============================================================================

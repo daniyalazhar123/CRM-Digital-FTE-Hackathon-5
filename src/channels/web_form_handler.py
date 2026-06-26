@@ -5,14 +5,23 @@ Phase 2: Specialization — Step 7
 Handles web form submissions via FastAPI endpoints.
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import os
+import sys
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr, validator
 from typing import Optional, List
 from datetime import datetime
-import uuid
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Add parent directories to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from agent.crm_agent import process_message
+from db.database import CRMDatabase
+
+db = CRMDatabase()
 
 router = APIRouter(prefix="/support", tags=["support-form"])
 
@@ -67,12 +76,6 @@ async def submit_support_form(submission: SupportFormSubmission):
     try:
         logger.info(f"Processing support form from {submission.email}")
         
-        # Import agent processing
-        import sys
-        import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agent'))
-        from crm_agent import process_message
-        
         # Process with CRM agent
         result = process_message(
             customer_email=submission.email,
@@ -100,13 +103,6 @@ async def get_ticket_status(ticket_id: str):
     Get status and conversation history for a ticket.
     """
     try:
-        # Import database
-        import sys
-        import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'db'))
-        from database import CRMDatabase
-        
-        db = CRMDatabase()
         ticket = db.get_ticket(ticket_id)
         
         if not ticket:
