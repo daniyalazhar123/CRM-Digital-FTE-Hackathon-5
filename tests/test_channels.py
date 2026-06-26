@@ -51,8 +51,9 @@ class TestGmailHandler:
         
         # Should not raise exception
         try:
-            body = handler._extract_body(payload)
-            assert isinstance(body, str) or body == ''
+            import asyncio
+            body, html_body = asyncio.run(handler._extract_body_content(payload))
+            assert isinstance(body, (str, type(None)))
         except Exception:
             # Base64 decoding might fail with mock data, that's OK
             pass
