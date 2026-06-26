@@ -10,7 +10,7 @@ import os
 import hashlib
 import hmac
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 import logging
 
@@ -170,7 +170,7 @@ class WhatsAppHandler:
                 'channel_message_id': form_data.get('MessageSid'),
                 'customer_phone': customer_phone,
                 'content': message_body,
-                'received_at': datetime.utcnow().isoformat(),
+                'received_at': datetime.now(timezone.utc).isoformat(),
                 'metadata': {
                     'num_media': num_media,
                     'media_urls': media_urls,
@@ -231,7 +231,7 @@ class WhatsAppHandler:
                 return {
                     'channel_message_id': message.sid,
                     'delivery_status': message.status,
-                    'sent_at': datetime.utcnow().isoformat()
+                    'sent_at': datetime.now(timezone.utc).isoformat()
                 }
             else:
                 raise RuntimeError(

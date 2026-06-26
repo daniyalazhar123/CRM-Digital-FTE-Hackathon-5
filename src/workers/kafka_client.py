@@ -8,7 +8,7 @@ Kafka producer and consumer for real event streaming.
 import json
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Callable, Optional, List
 from enum import Enum
 
@@ -70,7 +70,7 @@ class FTEKafkaProducer:
             topic: Topic name
             event: Event dictionary to publish
         """
-        event['timestamp'] = datetime.utcnow().isoformat()
+        event['timestamp'] = datetime.now(timezone.utc).isoformat()
         event['source'] = 'crm-fte'
         
         if not self.producer or not self._running:

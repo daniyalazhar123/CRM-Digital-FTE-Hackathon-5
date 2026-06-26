@@ -9,7 +9,7 @@ Collects and aggregates performance metrics for monitoring.
 import time
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class MetricsStore:
     
     def record_response_time(self, duration_ms: float, channel: str):
         """Record API response time."""
-        self.response_times.append((datetime.utcnow(), duration_ms, channel))
+        self.response_times.append((datetime.now(timezone.utc), duration_ms, channel))
         self.messages_by_channel[channel] += 1
         
         # Keep only last 1000 entries
@@ -65,7 +65,7 @@ class MetricsStore:
     
     def record_escalation(self, reason: str, channel: str):
         """Record ticket escalation."""
-        self.escalations.append((datetime.utcnow(), reason, channel))
+        self.escalations.append((datetime.now(timezone.utc), reason, channel))
         
         # Keep only last 500 entries
         if len(self.escalations) > 500:
@@ -73,7 +73,7 @@ class MetricsStore:
     
     def record_error(self, error_type: str, channel: str):
         """Record error occurrence."""
-        self.errors.append((datetime.utcnow(), error_type, channel))
+        self.errors.append((datetime.now(timezone.utc), error_type, channel))
         
         # Keep only last 500 entries
         if len(self.errors) > 500:
@@ -81,7 +81,7 @@ class MetricsStore:
     
     def record_sentiment(self, score: float, customer_id: str):
         """Record customer sentiment score."""
-        self.sentiment_scores.append((datetime.utcnow(), score, customer_id))
+        self.sentiment_scores.append((datetime.now(timezone.utc), score, customer_id))
         
         # Keep only last 2000 entries
         if len(self.sentiment_scores) > 2000:
@@ -97,7 +97,7 @@ class MetricsStore:
     
     def get_summary(self) -> Dict[str, Any]:
         """Get metrics summary."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         last_hour = now - timedelta(hours=1)
         
         # Response time stats
@@ -136,7 +136,7 @@ class MetricsStore:
     
     def get_channel_metrics(self) -> Dict[str, Dict[str, Any]]:
         """Get metrics broken down by channel."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         last_hour = now - timedelta(hours=1)
         
         channel_metrics = {}

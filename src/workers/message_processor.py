@@ -7,7 +7,7 @@ Unified message processor that consumes from Kafka and processes with CRM agent.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from .kafka_client import FTEKafkaProducer, FTEKafkaConsumer, TOPICS
@@ -71,7 +71,7 @@ class UnifiedMessageProcessor:
             message: Message dictionary
         """
         try:
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
             
             # Extract channel and customer info
             channel = message.get('channel', 'email')
@@ -90,7 +90,7 @@ class UnifiedMessageProcessor:
             )
             
             # Calculate metrics
-            processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
             
             # Publish metrics
             await self.producer.publish(TOPICS['metrics'], {
@@ -123,7 +123,7 @@ class UnifiedMessageProcessor:
             'original_message': message,
             'error': str(error),
             'error_type': type(error).__name__,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
         
         # Send apologetic response via appropriate channel

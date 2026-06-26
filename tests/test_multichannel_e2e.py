@@ -18,7 +18,7 @@ import pytest
 import asyncio
 import time
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 # Add parent directories to path
@@ -349,7 +349,7 @@ class TestEmailChannel:
                 "to": "support@techcorp.com",
                 "subject": "How to reset my password?",
                 "body": "Hi, I forgot my password and need to reset it. Can you help me with the steps?",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             })
 
             assert response.status_code == 200
@@ -374,7 +374,7 @@ class TestEmailChannel:
                 "to": "support@techcorp.com",
                 "subject": "Enterprise Pricing Question",
                 "body": "What is the price for enterprise plan? I need a quote for 100 users.",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             })
 
             assert response.status_code == 200
@@ -713,7 +713,7 @@ class TestCrossChannelContinuity:
                 "to": "support@techcorp.com",
                 "subject": "Re: Multi-channel sequence test",
                 "body": "Following up via email.",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             })
             assert email_response.status_code == 200
 
@@ -888,7 +888,7 @@ class TestEscalationGuardrails:
                 "to": "support@techcorp.com",
                 "subject": "Legal Issue",
                 "body": "I'm going to contact my lawyer about this issue.",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             })
 
             assert response.status_code == 200
@@ -1006,7 +1006,7 @@ class TestPerformanceReliability:
                 "to": "support@techcorp.com",
                 "subject": "Performance Test",
                 "body": "Testing response time for email webhook.",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             })
 
             elapsed = time.time() - start_time

@@ -12,7 +12,7 @@ Enhanced prototype with:
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
 
@@ -69,7 +69,7 @@ class InMemoryStore:
 
     def _now(self) -> str:
         """Get current timestamp."""
-        return datetime.utcnow().isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     def get_or_create_customer(self, identifier: str, identifier_type: str = "email", name: str = None) -> dict:
         """

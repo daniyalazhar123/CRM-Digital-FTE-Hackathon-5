@@ -9,7 +9,7 @@ Handles ticket ingestion, escalations, and metrics publishing.
 import json
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from aiokafka import AIOKafkaProducer
 
@@ -134,7 +134,7 @@ class KafkaProducer:
         """Publish ticket ingestion event."""
         message = {
             "event_type": "ticket_created",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             **ticket_data
         }
         await self.publish(KafkaTopics.TICKETS_INCOMING, message, key=ticket_data.get('ticket_id'))
@@ -151,7 +151,7 @@ class KafkaProducer:
         message = {
             "event_type": "message_received",
             "channel": channel,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             **message_data
         }
         await self.publish(topic, message, key=message_data.get('customer_id'))
@@ -160,7 +160,7 @@ class KafkaProducer:
         """Publish escalation event."""
         message = {
             "event_type": "escalation",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             **escalation_data
         }
         await self.publish(KafkaTopics.ESCALATIONS, message, key=escalation_data.get('ticket_id'))
@@ -169,7 +169,7 @@ class KafkaProducer:
         """Publish metric event."""
         message = {
             "event_type": "metric",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             **metric_data
         }
         await self.publish(KafkaTopics.METRICS, message)
@@ -179,7 +179,7 @@ class KafkaProducer:
         dlq_message = {
             "original_topic": original_topic,
             "error": error,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "message": message
         }
         await self.publish(KafkaTopics.DLQ, dlq_message)

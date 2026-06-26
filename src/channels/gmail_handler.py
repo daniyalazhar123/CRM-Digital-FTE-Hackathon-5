@@ -11,7 +11,7 @@ import email
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import json
 
@@ -141,7 +141,7 @@ class GmailHandler:
                     'customer_email': self._extract_email(payload.get('from', payload.get('From', ''))),
                     'subject': payload.get('subject', payload.get('Subject', '')),
                     'content': payload.get('body', payload.get('Body', payload.get('text', ''))),
-                    'received_at': payload.get('received_at', payload.get('timestamp', datetime.utcnow().isoformat())),
+                    'received_at': payload.get('received_at', payload.get('timestamp', datetime.now(timezone.utc).isoformat())),
                     'thread_id': payload.get('threadId'),
                     'raw_payload': payload
                 }
@@ -185,7 +185,7 @@ class GmailHandler:
                 'subject': subject,
                 'content': body or html_body or '',
                 'html_content': html_body,
-                'received_at': datetime.utcnow().isoformat(),
+                'received_at': datetime.now(timezone.utc).isoformat(),
                 'thread_id': thread_id,
                 'headers': headers,
                 'raw_payload': gmail_message
@@ -199,7 +199,7 @@ class GmailHandler:
                 'customer_email': '',
                 'subject': '',
                 'content': '',
-                'received_at': datetime.utcnow().isoformat(),
+                'received_at': datetime.now(timezone.utc).isoformat(),
                 'thread_id': gmail_message.get('threadId'),
                 'error': str(e)
             }

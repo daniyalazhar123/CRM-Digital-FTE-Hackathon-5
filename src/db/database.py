@@ -9,7 +9,7 @@ Provides CRUD operations, vector search, and migration capabilities.
 import psycopg2
 from psycopg2 import pool, sql, extras
 from psycopg2.extras import RealDictCursor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 import json
 import os
@@ -271,7 +271,7 @@ class CRMDatabase:
         Create a new support ticket.
         Matches InMemoryStore.create_ticket()
         """
-        ticket_id = f"TKT-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{self._generate_short_id()}"
+        ticket_id = f"TKT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{self._generate_short_id()}"
         
         with DatabaseConnection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -398,7 +398,7 @@ class CRMDatabase:
                     
                     metadata['sentiment_history'].append({
                         'score': score,
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': datetime.now(timezone.utc).isoformat()
                     })
                     
                     # Keep last 20 readings
@@ -603,7 +603,7 @@ class _FallbackDB:
         return str(uuid.uuid4())
 
     def _gen_ticket_id(self):
-        ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        ts = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
         n = self._next_ticket_num
         self._next_ticket_num += 1
         return f"TKT-{ts}-{n:04d}"
@@ -622,7 +622,7 @@ class _FallbackDB:
         customer = {
             'id': cid, 'email': email, 'phone': phone,
             'name': name, 'plan': 'free',
-            'created_at': datetime.utcnow(),
+            'created_at': datetime.now(timezone.utc),
             'metadata': '{}'
         }
         self.customers[cid] = customer
@@ -638,7 +638,7 @@ class _FallbackDB:
             'id': tid, 'customer_id': customer_id, 'issue': issue,
             'priority': priority, 'channel': channel, 'status': 'open',
             'escalated': False, 'escalation_reason': None,
-            'created_at': datetime.utcnow(), 'resolved_at': None
+            'created_at': datetime.now(timezone.utc), 'resolved_at': None
         }
         self.tickets[tid] = ticket
         return dict(ticket)
@@ -660,7 +660,7 @@ class _FallbackDB:
         t = self.tickets.get(ticket_id)
         if t:
             t['status'] = 'resolved'
-            t['resolved_at'] = datetime.utcnow()
+            t['resolved_at'] = datetime.now(timezone.utc)
             return True
         return False
 
@@ -670,7 +670,7 @@ class _FallbackDB:
             'id': mid, 'ticket_id': ticket_id, 'customer_id': customer_id,
             'role': role, 'content': content, 'channel': channel,
             'sentiment_score': sentiment_score,
-            'timestamp': datetime.utcnow()
+            'timestamp': datetime.now(timezone.utc)
         }
         self.messages.append(msg)
         return dict(msg)
@@ -689,7 +689,7 @@ class _FallbackDB:
         if 'sentiment_history' not in metadata:
             metadata['sentiment_history'] = []
         metadata['sentiment_history'].append({
-            'score': score, 'timestamp': datetime.utcnow().isoformat()
+            'score': score, 'timestamp': datetime.now(timezone.utc).isoformat()
         })
         metadata['sentiment_history'] = metadata['sentiment_history'][-20:]
         scores = [s['score'] for s in metadata['sentiment_history']]
@@ -729,7 +729,7 @@ class _FallbackDB:
         self.embeddings.append({
             'id': eid, 'content': content, 'embedding': embedding_vector,
             'category': category, 'source': source,
-            'created_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc)
         })
         return eid
 

@@ -34,7 +34,7 @@ from locust import HttpUser, task, between, events
 import random
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -245,7 +245,7 @@ class EmailChannelUser(HttpUser):
                 "to": "support@techcorp.com",
                 "subject": f"Load Test Email {random_id}",
                 "body": "This is a load test email to verify system performance under stress.",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             },
             catch_response=True
         )
@@ -333,7 +333,7 @@ class MixedChannelUser(HttpUser):
                 "to": "support@techcorp.com",
                 "subject": "Mixed Channel Email",
                 "body": "This is a mixed channel load test email.",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             }
         )
     
@@ -369,7 +369,7 @@ def on_test_start(environment, **kwargs):
     logger.info("LOAD TEST STARTING")
     logger.info("=" * 60)
     logger.info(f"Target host: {environment.host}")
-    logger.info(f"Start time: {datetime.utcnow().isoformat()}")
+    logger.info(f"Start time: {datetime.now(timezone.utc).isoformat()}")
     logger.info("=" * 60)
     
     # Check initial system health
@@ -393,7 +393,7 @@ def on_test_stop(environment, **kwargs):
     logger.info("=" * 60)
     logger.info("LOAD TEST COMPLETED")
     logger.info("=" * 60)
-    logger.info(f"End time: {datetime.utcnow().isoformat()}")
+    logger.info(f"End time: {datetime.now(timezone.utc).isoformat()}")
     
     # Get statistics
     stats = environment.stats
@@ -482,7 +482,7 @@ class EscalationTestUser(HttpUser):
                 "to": "support@techcorp.com",
                 "subject": "Legal Issue",
                 "body": "I need to consult with my lawyer about this matter.",
-                "received_at": datetime.utcnow().isoformat()
+                "received_at": datetime.now(timezone.utc).isoformat()
             }
         )
     

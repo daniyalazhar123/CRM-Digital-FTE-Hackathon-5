@@ -12,7 +12,7 @@ import time
 import random
 import pytest
 import psycopg2
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 
 # Add parent directories to path
@@ -114,7 +114,7 @@ class TestMultiChannelFlow:
                     "to": "support@techcorp.com",
                     "subject": "How to reset password?",
                     "body": "Hi, I forgot my password and need to reset it. Can you help me with the steps?",
-                    "received_at": datetime.utcnow().isoformat()
+                    "received_at": datetime.now(timezone.utc).isoformat()
                 }
             )
             
@@ -173,7 +173,7 @@ class TestMultiChannelFlow:
                 json={
                     "from": phone,
                     "message": "How do I export my data from the dashboard?",
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }
             )
             
@@ -275,7 +275,7 @@ class TestMultiChannelFlow:
                     "to": "support@techcorp.com",
                     "subject": "API Question",
                     "body": "How do I use the REST API?",
-                    "received_at": datetime.utcnow().isoformat()
+                    "received_at": datetime.now(timezone.utc).isoformat()
                 }
             )
             assert response1.status_code == 200
@@ -314,7 +314,7 @@ class TestMultiChannelFlow:
                 json={
                     "from": phone,
                     "message": "Thanks, now how about the WebSocket API?",
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }
             )
             assert response2.status_code == 200
