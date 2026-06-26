@@ -170,12 +170,12 @@ The agent **must** escalate on these — it never discusses pricing, never proce
 
 ## Testing
 
-**168/168 tests passing (100%)** — verified against real infrastructure.
+**171/171 tests passing (100%)** — verified against real infrastructure.
 
 | Test File | Tests | Status |
 |---|---|---|
 | test_agent.py | 19 | 100% |
-| test_api.py | 15 | 100% |
+| test_api.py | 16 | 100% |
 | test_database.py | 14 | 100% |
 | test_workers.py | 8 | 100% |
 | test_channels.py | 12 | 100% |
@@ -353,16 +353,16 @@ crm-digital-fte/
 │   │   └── components/
 │   │       └── Navbar.jsx          # Navigation bar
 │   └── workers/                    # Background workers
-├── tests/                          # Test suite (168 tests)
+├── tests/                          # Test suite (171 tests)
 │   ├── test_agent.py               # Agent workflow tests (19)
 │   ├── test_api.py                 # API endpoint tests (15)
 │   ├── test_database.py            # Database CRUD tests (14)
 │   ├── test_channels.py            # Channel handler tests (12)
 │   ├── test_cache.py               # Redis caching tests (14)
 │   ├── test_monitoring.py          # Prometheus metrics tests (18)
-│   ├── test_workers.py             # Background worker tests (8)
-│   ├── test_multichannel_e2e.py    # End-to-end multi-channel tests (30)
-│   ├── test_integration.py         # Integration flow tests (15)
+│   ├── test_workers.py             # Background worker tests (3)
+│   ├── test_multichannel_e2e.py    # End-to-end multi-channel tests (29)
+│   ├── test_integration.py         # Integration flow tests (11)
 │   ├── test_performance.py         # Performance benchmarks (6)
 │   ├── test_24hour_reliability.py  # 24-hour reliability test (1)
 │   ├── test_webhook_gmail.py       # Gmail webhook tests (13)
