@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import time
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from openai import OpenAI
@@ -154,6 +155,8 @@ def process_message(customer_email: str, message: str, channel: str,
                     customer_name: Optional[str] = None) -> dict:
     """
     Process a customer message through the complete agent flow.
+    Uses OpenAI Agents SDK Runner for LLM interaction and tool orchestration.
+    Backward-compatible sync wrapper.
 
     Args:
         customer_email: Customer email address
@@ -352,10 +355,13 @@ async def process_message_async(customer_email: str, message: str, channel: str,
     """Process message using OpenAI Agents SDK Runner."""
     start_time = time.time()
     try:
-        result = await Runner.run(
-            customer_success_agent,
-            input=f"Channel: {channel}\nCustomer email: {customer_email}\nCustomer name: {customer_name or 'N/A'}\n\nMessage: {message}"
+        agent_input = (
+            f"Channel: {channel}\n"
+            f"Customer email: {customer_email}\n"
+            f"Customer name: {customer_name or 'N/A'}\n\n"
+            f"Message: {message}"
         )
+        result = await Runner.run(customer_success_agent, input=agent_input)
 
         response_time = (time.time() - start_time) * 1000
         return {

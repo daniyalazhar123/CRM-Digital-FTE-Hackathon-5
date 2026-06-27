@@ -60,53 +60,43 @@ class TestGmailHandler:
 
 
 class TestWhatsAppHandler:
-    """Test WhatsApp handler."""
+    """Test WhatsApp handler (updated for router-based functions)."""
     
     def test_whatsapp_handler_import(self):
-        """Test that WhatsApp handler can be imported."""
-        from channels.whatsapp_handler import WhatsAppHandler
-        handler = WhatsAppHandler()
-        assert handler is not None
+        """Test that WhatsApp handler functions can be imported."""
+        from channels.whatsapp_handler import parse_whatsapp_message, build_twiml_response, send_whatsapp_message
+        assert parse_whatsapp_message is not None
+        assert build_twiml_response is not None
+        assert send_whatsapp_message is not None
     
     def test_whatsapp_format_response_short(self):
-        """Test response formatting for short messages."""
-        from channels.whatsapp_handler import WhatsAppHandler
-        handler = WhatsAppHandler()
+        """Test TwiML building for short messages."""
+        from channels.whatsapp_handler import build_twiml_response
 
         response = "Short test response"
-        messages = handler.format_response_for_whatsapp(response)
+        twiml = build_twiml_response(response)
 
-        assert isinstance(messages, list)
-        assert len(messages) == 1
-        assert messages[0] == response
+        assert "Response" in twiml
+        assert "Short test response" in twiml
 
     def test_whatsapp_format_response_long(self):
-        """Test response formatting for long messages."""
-        from channels.whatsapp_handler import WhatsAppHandler
-        handler = WhatsAppHandler()
+        """Test TwiML building for long messages (>1600 chars)."""
+        from channels.whatsapp_handler import build_twiml_response
 
-        # Create long response (> 1600 chars)
-        long_response = "Test. " * 500  # 3000 chars
-        messages = handler.format_response_for_whatsapp(long_response, max_length=1600)
+        long_response = "A" * 2000
+        twiml = build_twiml_response(long_response)
 
-        assert isinstance(messages, list)
-        assert len(messages) > 1  # Should be split
-        assert all(len(msg) <= 1600 for msg in messages)
+        assert "Response" in twiml
+        # Long messages should have multiple <Message> tags
+        assert twiml.count("<Message>") > 1
     
     def test_whatsapp_phone_format(self):
-        """Test phone number formatting."""
-        from channels.whatsapp_handler import WhatsAppHandler
-        handler = WhatsAppHandler()
+        """Test phone number formatting via parse_whatsapp_message."""
+        from channels.whatsapp_handler import parse_whatsapp_message
         
-        # Test without whatsapp: prefix
-        phone = "+14155551234"
-        formatted = f'whatsapp:{phone}' if not phone.startswith('whatsapp:') else phone
-        assert formatted.startswith('whatsapp:')
-        
-        # Test with whatsapp: prefix
-        phone = "whatsapp:+14155551234"
-        formatted = f'whatsapp:{phone}' if not phone.startswith('whatsapp:') else phone
-        assert formatted == "whatsapp:+14155551234"
+        result = parse_whatsapp_message({"From": "whatsapp:+14155551234", "Body": "test"})
+        assert result["customer_phone"] == "+14155551234"
+        assert result["from_number"] == "whatsapp:+14155551234"
 
 
 class TestWebFormHandler:

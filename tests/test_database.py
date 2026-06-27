@@ -14,6 +14,9 @@ import uuid
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -23,11 +26,11 @@ from psycopg2.extras import RealDictCursor
 # =============================================================================
 
 DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'dbname': 'crm_db',
-    'user': 'postgres',
-    'password': 'postgres123'
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': int(os.getenv('DB_PORT', 5432)),
+    'dbname': os.getenv('DB_NAME', 'crm_db'),
+    'user': os.getenv('DB_USER', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', 'postgres123')
 }
 
 
