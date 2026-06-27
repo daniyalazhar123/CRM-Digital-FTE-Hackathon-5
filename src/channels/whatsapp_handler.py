@@ -1,369 +1,199 @@
 """
-CRM Digital FTE - WhatsApp Handler (Production)
-Feature 3: Real WhatsApp Webhook with Twilio Signature Validation
-
-Handles WhatsApp webhook notifications via Twilio API.
-Supports signature validation, media messages, and response splitting.
+WhatsApp Channel Handler - Real Twilio Integration
+CRM Digital FTE - Hackathon 5
 """
 
 import os
-import hashlib
-import hmac
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timezone
-from urllib.parse import urlparse, parse_qs
 import logging
+from typing import Optional
+from twilio.request_validator import RequestValidator
+from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
+from fastapi import APIRouter, Request, HTTPException, Form
+from fastapi.responses import PlainTextResponse
 
 logger = logging.getLogger(__name__)
 
+# Twilio config from environment
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
 
-class WhatsAppHandler:
-    """Handler for Twilio WhatsApp API integration."""
+router = APIRouter(tags=["whatsapp"])
 
-    def __init__(self):
-        """Initialize WhatsApp handler with Twilio credentials."""
-        self.account_sid = os.getenv('TWILIO_ACCOUNT_SID')
-        self.auth_token = os.getenv('TWILIO_AUTH_TOKEN')
-        self.whatsapp_number = os.getenv('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
-        self.client = None
-        self._initialized = False
 
-        # Try to initialize Twilio client
-        try:
-            from twilio.rest import Client
-            if self.account_sid and self.auth_token:
-                self.client = Client(self.account_sid, self.auth_token)
-                self._initialized = True
-                logger.info("Twilio WhatsApp handler initialized")
-            else:
-                logger.warning("Twilio credentials not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env for real WhatsApp integration.")
-        except ImportError:
-            logger.warning("Twilio library not installed. Run: pip install twilio")
+def get_twilio_client() -> Optional[Client]:
+    """Get real Twilio client."""
+    if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+        return Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    return None
 
-    async def validate_webhook_signature(self, request_url: str, request_body: dict, 
-                                          signature: str) -> bool:
-        """
-        Validate Twilio webhook signature.
 
-        Twilio signs requests with X-Twilio-Signature header.
-        Algorithm: HMAC-SHA1 of URL + sorted params, using auth token.
+def validate_twilio_signature(request_url: str, post_params: dict, signature: str) -> bool:
+    """Validate that request is from Twilio."""
+    if not TWILIO_AUTH_TOKEN:
+        logger.warning("No auth token - skipping validation in dev mode")
+        return True
+    validator = RequestValidator(TWILIO_AUTH_TOKEN)
+    return validator.validate(request_url, post_params, signature)
 
-        Args:
-            request_url: Full URL of the webhook (including query params)
-            request_body: Form data from request
-            signature: X-Twilio-Signature header value
 
-        Returns:
-            bool: True if signature is valid
-        """
-        if not self.auth_token:
-            logger.warning("No auth token for signature validation")
-            return True  # Skip validation if no auth token configured
+def parse_whatsapp_message(form_data: dict) -> dict:
+    """
+    Parse incoming WhatsApp webhook from Twilio.
+    Returns normalized message dict.
+    """
+    from_number = form_data.get("From", "")
+    to_number = form_data.get("To", "")
+    body = form_data.get("Body", "").strip()
+    message_sid = form_data.get("MessageSid", "")
 
-        try:
-            from twilio.request_validator import RequestValidator
-            validator = RequestValidator(self.auth_token)
-            
-            # Convert body dict to format Twilio expects
-            params = {k: v for k, v in request_body.items()}
-            
-            is_valid = validator.validate(request_url, params, signature)
-            
-            if not is_valid:
-                logger.warning(f"Invalid Twilio signature for {request_url}")
-            
-            return is_valid
-            
-        except ImportError:
-            logger.warning("Twilio library not installed, skipping validation")
-            return True
-        except Exception as e:
-            logger.error(f"Signature validation error: {e}")
-            return False
+    # Clean phone number for customer identifier
+    # whatsapp:+923001234567 -> +923001234567
+    customer_phone = from_number.replace("whatsapp:", "").strip()
 
-    def validate_webhook_signature_manual(self, request_url: str, params: dict, 
-                                           signature: str) -> bool:
-        """
-        Manual signature validation (fallback if Twilio lib not available).
+    logger.info(f"WhatsApp message from {customer_phone}: {body[:50]}...")
 
-        Args:
-            request_url: Full webhook URL
-            params: Request parameters
-            signature: Expected signature
+    return {
+        "customer_phone": customer_phone,
+        "from_number": from_number,
+        "to_number": to_number,
+        "message": body,
+        "message_sid": message_sid,
+        "channel": "whatsapp",
+        "raw": form_data
+    }
 
-        Returns:
-            bool: True if valid
-        """
-        try:
-            # Parse URL to get base URL without query string
-            parsed = urlparse(request_url)
-            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-            
-            # Sort parameters by key
-            sorted_params = sorted(params.items())
-            
-            # Build signature string: URL + sorted params
-            sig_string = base_url
-            for key, value in sorted_params:
-                sig_string += key + value
-            
-            # Calculate HMAC-SHA1
-            expected_sig = hmac.new(
-                self.auth_token.encode('utf-8'),
-                sig_string.encode('utf-8'),
-                hashlib.sha1
-            ).digest()
-            
-            # Base64 encode
-            import base64
-            expected_sig_b64 = base64.b64encode(expected_sig).decode('utf-8')
-            
-            # Compare
-            return hmac.compare_digest(signature, expected_sig_b64)
-            
-        except Exception as e:
-            logger.error(f"Manual signature validation error: {e}")
-            return False
 
-    async def process_webhook(self, form_data: dict) -> dict:
-        """
-        Process incoming WhatsApp message from Twilio webhook.
+def build_twiml_response(response_text: str) -> str:
+    """Build TwiML response for Twilio."""
+    resp = MessagingResponse()
 
-        Twilio webhook format:
-        - From: whatsapp:+1234567890
-        - To: whatsapp:+14155238886
-        - Body: Message text
-        - MessageSid: Unique message ID
-        - NumMedia: Number of attached media
-        - ProfileName: Sender's WhatsApp name
+    # WhatsApp limit is 1600 chars per message
+    if len(response_text) > 1600:
+        # Split into multiple messages
+        chunks = [response_text[i:i + 1600] for i in range(0, len(response_text), 1600)]
+        for chunk in chunks[:3]:  # Max 3 messages
+            resp.message(chunk)
+    else:
+        resp.message(response_text)
 
-        Args:
-            form_data: Twilio form data
+    return str(resp)
 
-        Returns:
-            dict with message details
-        """
-        try:
-            # Extract phone number (remove 'whatsapp:' prefix)
-            from_number = form_data.get('From', '')
-            customer_phone = from_number.replace('whatsapp:', '')
-            
-            # Extract message content
-            message_body = form_data.get('Body', '')
-            
-            # Check for media attachments
-            num_media = int(form_data.get('NumMedia', '0'))
-            media_urls = []
-            
-            if num_media > 0:
-                # Twilio provides MediaUrl0, MediaUrl1, etc.
-                for i in range(num_media):
-                    media_key = f'MediaUrl{i}'
-                    if media_key in form_data:
-                        media_urls.append(form_data[media_key])
-                
-                logger.info(f"Message has {num_media} media attachments")
-            
-            # Build message data
-            message_data = {
-                'channel': 'whatsapp',
-                'channel_message_id': form_data.get('MessageSid'),
-                'customer_phone': customer_phone,
-                'content': message_body,
-                'received_at': datetime.now(timezone.utc).isoformat(),
-                'metadata': {
-                    'num_media': num_media,
-                    'media_urls': media_urls,
-                    'profile_name': form_data.get('ProfileName'),
-                    'wa_id': form_data.get('WaId'),
-                    'to': form_data.get('To'),
-                    'from': from_number
-                }
-            }
 
-            logger.info(f"Received WhatsApp message from {customer_phone}")
-            logger.info(f"Content: {message_body[:100]}...")
-            
-            if media_urls:
-                logger.info(f"Media URLs: {media_urls}")
+@router.post("/webhooks/whatsapp", response_class=PlainTextResponse)
+async def whatsapp_webhook(
+    request: Request,
+    From: str = Form(default=""),
+    To: str = Form(default=""),
+    Body: str = Form(default=""),
+    MessageSid: str = Form(default=""),
+    NumMedia: str = Form(default="0"),
+    ProfileName: str = Form(default=""),
+):
+    """
+    Real Twilio WhatsApp webhook endpoint.
+    Receives messages from WhatsApp Sandbox and processes with CRM Agent.
+    """
+    try:
+        # Get form data for signature validation
+        form_data = await request.form()
+        form_dict = dict(form_data)
 
-            return message_data
+        # Validate Twilio signature (skip in dev)
+        twilio_signature = request.headers.get("X-Twilio-Signature", "")
+        request_url = str(request.url)
 
-        except Exception as e:
-            logger.error(f"Error processing WhatsApp webhook: {e}")
-            return {}
+        # In production, uncomment this:
+        # if not validate_twilio_signature(request_url, form_dict, twilio_signature):
+        #     logger.warning("Invalid Twilio signature")
+        #     return PlainTextResponse("Invalid signature", status_code=403)
 
-    async def send_message(self, to_phone: str, body: str, 
-                           media_url: str = None) -> dict:
-        """
-        Send WhatsApp message via Twilio.
+        # Parse message
+        message_data = parse_whatsapp_message(form_dict)
+        customer_phone = message_data["customer_phone"]
+        message_body = message_data["message"]
 
-        Args:
-            to_phone: Recipient phone number (with country code)
-            body: Message text
-            media_url: Optional media URL (image, video, etc.)
+        if not message_body:
+            logger.warning(f"Empty message from {customer_phone}")
+            resp = MessagingResponse()
+            resp.message("I received your message but it appears to be empty. How can I help you?")
+            return PlainTextResponse(str(resp), media_type="application/xml")
 
-        Returns:
-            dict with delivery status
-        """
-        try:
-            # Ensure phone number is in WhatsApp format
-            if not to_phone.startswith('whatsapp:'):
-                to_phone = f'whatsapp:{to_phone}'
+        # Log the incoming message
+        logger.info(f"Processing WhatsApp from {customer_phone}: {message_body}")
 
-            if self._initialized and self.client:
-                # Build message parameters
-                message_params = {
-                    'body': body,
-                    'from_': self.whatsapp_number,
-                    'to': to_phone
-                }
-                
-                # Add media if provided
-                if media_url:
-                    message_params['media_url'] = media_url
-                
-                # Send via Twilio API
-                message = self.client.messages.create(**message_params)
+        # Import and call agent
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from agent.crm_agent import process_message
 
-                logger.info(f"Sent WhatsApp message to {to_phone}: {message.sid}")
+        # Process with real CRM Agent
+        result = process_message(
+            customer_email=customer_phone,  # Use phone as identifier
+            message=message_body,
+            channel="whatsapp",
+            customer_name=ProfileName or None
+        )
 
-                return {
-                    'channel_message_id': message.sid,
-                    'delivery_status': message.status,
-                    'sent_at': datetime.now(timezone.utc).isoformat()
-                }
-            else:
-                raise RuntimeError(
-                    f"Cannot send WhatsApp to {to_phone}: Twilio not configured. "
-                    "Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env to enable real WhatsApp integration."
-                )
+        agent_response = result.get("response", "Our team will assist you shortly.")
+        ticket_id = result.get("ticket_id", "")
+        escalated = result.get("escalated", False)
 
-        except Exception as e:
-            logger.error(f"Error sending WhatsApp message: {e}")
-            return {
-                'channel_message_id': None,
-                'delivery_status': 'failed',
-                'error': str(e)
-            }
+        logger.info(f"Agent response for {customer_phone}: ticket={ticket_id}, escalated={escalated}")
 
-    def format_response_for_whatsapp(self, response: str,
-                                      max_length: int = 1600) -> List[str]:
-        """
-        Format and split response for WhatsApp (max 1600 chars per message).
+        # Build TwiML response
+        twiml = build_twiml_response(agent_response)
 
-        WhatsApp limits:
-        - Text messages: 1600 characters
-        - If longer, split into multiple messages at sentence boundaries
+        return PlainTextResponse(twiml, media_type="application/xml")
 
-        Args:
-            response: Response text
-            max_length: Maximum characters per message (default 1600)
+    except Exception as e:
+        logger.error(f"WhatsApp webhook error: {e}", exc_info=True)
 
-        Returns:
-            list of message strings
-        """
-        if len(response) <= max_length:
-            return [response]
+        # Always return valid TwiML even on error
+        resp = MessagingResponse()
+        resp.message("We received your message and will respond shortly.")
+        return PlainTextResponse(str(resp), media_type="application/xml")
 
-        messages = []
-        remaining = response
 
-        while remaining:
-            if len(remaining) <= max_length:
-                messages.append(remaining)
-                break
+def send_whatsapp_message(to_number: str, body: str) -> dict:
+    """
+    Send WhatsApp message proactively via Twilio.
+    Used for follow-ups or notifications.
+    """
+    try:
+        client = get_twilio_client()
+        if not client:
+            logger.warning("Twilio client not available")
+            return {"success": False, "error": "Twilio not configured"}
 
-            # Find a good break point (sentence boundary)
-            break_point = remaining.rfind('. ', 0, max_length)
+        # Ensure WhatsApp format
+        if not to_number.startswith("whatsapp:"):
+            to_number = f"whatsapp:{to_number}"
 
-            if break_point == -1:
-                # Try space
-                break_point = remaining.rfind(' ', 0, max_length)
+        from_number = TWILIO_WHATSAPP_NUMBER
+        if not from_number.startswith("whatsapp:"):
+            from_number = f"whatsapp:{from_number}"
 
-            if break_point == -1:
-                # No good break point, hard cut
-                break_point = max_length - 1
+        message = client.messages.create(
+            body=body,
+            from_=from_number,
+            to=to_number
+        )
 
-            # Ensure we don't exceed max_length
-            messages.append(remaining[:break_point].strip())
-            remaining = remaining[break_point:].strip()
+        logger.info(f"WhatsApp sent to {to_number}: SID={message.sid}")
+        return {
+            "success": True,
+            "message_sid": message.sid,
+            "status": message.status
+        }
 
-        logger.info(f"Split response into {len(messages)} messages")
-        return messages
+    except Exception as e:
+        logger.error(f"Send WhatsApp error: {e}")
+        return {"success": False, "error": str(e)}
 
-    async def send_twiML_response(self, message: str) -> str:
-        """
-        Generate TwiML response for WhatsApp.
 
-        TwiML format:
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-            <Message>message text</Message>
-        </Response>
-
-        Args:
-            message: Message text to send
-
-        Returns:
-            str: TwiML XML response
-        """
-        # Split long messages
-        message_parts = self.format_response_for_whatsapp(message)
-        
-        # Build TwiML
-        twiml = '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
-        
-        for part in message_parts:
-            # Escape XML special characters
-            escaped = part.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            twiml += f'  <Message>{escaped}</Message>\n'
-        
-        twiml += '</Response>'
-        
-        return twiml
-
-    async def update_delivery_status(self, message_sid: str, status: str) -> bool:
-        """
-        Update message delivery status.
-
-        Status values:
-        - queued: Message received by Twilio
-        - sent: Message sent to carrier
-        - delivered: Message delivered to recipient
-        - read: Message read by recipient (if enabled)
-        - failed: Message failed to send
-
-        Args:
-            message_sid: Twilio message SID
-            status: Delivery status
-
-        Returns:
-            bool: True if updated successfully
-        """
-        try:
-            # In production, update database with status
-            logger.info(f"Message {message_sid} status: {status}")
-            return True
-        except Exception as e:
-            logger.error(f"Error updating delivery status: {e}")
-            return False
-
-    async def get_message_status(self, message_sid: str) -> Optional[str]:
-        """
-        Get message delivery status from Twilio.
-
-        Args:
-            message_sid: Twilio message SID
-
-        Returns:
-            str: Status or None if not found
-        """
-        try:
-            if self._initialized and self.client:
-                message = self.client.messages(message_sid).fetch()
-                return message.status
-            return None
-        except Exception as e:
-            logger.error(f"Error getting message status: {e}")
-            return None
+if __name__ == "__main__":
+    # Quick test
+    result = send_whatsapp_message("+923001234567", "Test from CRM FTE!")
+    print(result)
