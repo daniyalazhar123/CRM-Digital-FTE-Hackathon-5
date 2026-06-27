@@ -36,6 +36,7 @@ from db.database import CRMDatabase
 
 # Import channel handlers
 from channels.web_form_handler import router as web_form_router
+from channels.whatsapp_handler import router as whatsapp_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -106,6 +107,7 @@ app.add_middleware(
 
 # Include web form router
 app.include_router(web_form_router)
+app.include_router(whatsapp_router)
 
 # =============================================================================
 # PROMETHEUS METRICS ENDPOINT
@@ -325,142 +327,6 @@ async def gmail_webhook(request: Request):
             "status": "error",
             "error": str(e)
         }
-
-
-# =============================================================================
-# WHATSAPP WEBHOOK ENDPOINT (Twilio)
-# =============================================================================
-
-@app.post("/webhooks/whatsapp")
-async def whatsapp_webhook(request: Request):
-    """
-    Handle incoming WhatsApp messages via Twilio webhook.
-
-    Validates Twilio signature, processes message, and returns TwiML response.
-
-    Twilio webhook format (form data):
-    - From: whatsapp:+1234567890
-    - Body: Message text
-    - MessageSid: Unique message ID
-    - NumMedia: Number of media attachments
-
-    JSON format (for testing):
-    {
-        "from": "+1234567890" or "whatsapp:+1234567890",
-        "message": "Message text"
-    }
-    """
-    try:
-        # Get T wilio signature header
-        signature = request.headers.get('X-Twilio-Signature', '')
-
-        # Try JSON first (for tests), then form data (for Twilio)
-        form_dict = {}
-        content_type = request.headers.get('content-type', '')
-        
-        if 'application/json' in content_type:
-            # JSON format for testing
-            json_data = await request.json()
-            phone = json_data.get('from', json_data.get('From', ''))
-            msg_body = json_data.get('message', json_data.get('Body', json_data.get('body', '')))
-            
-            # Remove whatsapp: prefix if present
-            if phone.startswith('whatsapp:'):
-                phone = phone.replace('whatsapp:', '')
-            
-            form_dict = {
-                'From': f'whatsapp:{phone}' if not phone.startswith('whatsapp:') else phone,
-                'Body': msg_body,
-                'MessageSid': json_data.get('MessageSid', f'SM{int(time.time())}'),
-                'NumMedia': '0'
-            }
-        else:
-            # Form data (Twilio format)
-            form_data = await request.form()
-            form_dict = dict(form_data)
-        
-        # Get request URL for signature validation
-        url = str(request.url)
-
-        # Import WhatsApp handler
-        from channels.whatsapp_handler import WhatsAppHandler
-        handler = WhatsAppHandler()
-
-        # Validate signature (skip in mock mode)
-        if signature and handler.auth_token:
-            is_valid = await handler.validate_webhook_signature(url, form_dict, signature)
-            if not is_valid:
-                logger.warning("Invalid Twilio signature")
-                # Don't reject - allow for testing without valid credentials
-
-        # Process webhook
-        message_data = await handler.process_webhook(form_dict)
-
-        if not message_data.get('customer_phone'):
-            logger.error("No phone number in WhatsApp message")
-            # For JSON format, return JSON error
-            if 'application/json' in content_type:
-                return {"status": "error", "message": "No phone number"}
-            return {"status": "error", "message": "No phone number"}
-
-        phone = message_data['customer_phone']
-        msg_body = message_data['content']
-
-        logger.info(f"Received WhatsApp message from {phone}: {msg_body}")
-
-        # Process with CRM agent
-        result = process_message(
-            customer_email=phone,  # Use phone as identifier
-            message=msg_body,
-            channel="whatsapp"
-        )
-
-        logger.info(f"WhatsApp processed: {result}")
-
-        # For JSON requests, return JSON response
-        if 'application/json' in content_type:
-            return {
-                "status": "processed",
-                "ticket_id": result.get('ticket_id'),
-                "message": result.get('response', 'Your message has been received'),
-                "escalated": result.get('escalated', False)
-            }
-
-        # Generate TwiML response for Twilio
-        response_message = result.get('response', 'Your message has been received')
-        twiml = await handler.send_twiML_response(response_message)
-
-        # Return TwiML (content type must be application/xml)
-        from fastapi.responses import Response
-        return Response(
-            content=twiml,
-            media_type="application/xml"
-        )
-
-    except Exception as e:
-        logger.error(f"WhatsApp webhook error: {e}")
-        # Return error TwiML
-        error_twiML = '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Message>Sorry, we encountered an error. Please try again.</Message>\n</Response>'
-        from fastapi.responses import Response
-        return Response(content=error_twiML, media_type="application/xml")
-
-
-@app.post("/webhooks/whatsapp/status")
-async def whatsapp_status_webhook(request: Request):
-    """Handle WhatsApp message status updates (delivered, read, etc.)."""
-    try:
-        form_data = await request.form()
-        logger.info(f"Received WhatsApp status: {form_data}")
-
-        # Update message delivery status in database
-        # message_sid = form_data.get('MessageSid')
-        # status = form_data.get('MessageStatus')
-
-        return {"status": "received"}
-
-    except Exception as e:
-        logger.error(f"WhatsApp status webhook error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =============================================================================
