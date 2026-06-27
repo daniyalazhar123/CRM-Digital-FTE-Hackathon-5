@@ -2,7 +2,7 @@
 CRM Digital FTE - Customer Success Agent
 Phase 2: Specialization — Step 3
 
-Production-grade Customer Success Agent built with OpenAI Agents SDK.
+Production-grade Customer Success Agent using raw OpenAI client.
 Runs on Groq LPU for fast inference via OpenAI-compatible API.
 """
 
@@ -15,8 +15,6 @@ from datetime import datetime, timezone
 from typing import Optional
 from openai import OpenAI
 from dotenv import load_dotenv
-
-from agents import Agent, Runner, set_default_openai_client
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -54,7 +52,6 @@ try:
             api_key=GROQ_API_KEY,
             base_url=BASE_URL
         )
-        set_default_openai_client(groq_client)
     else:
         groq_client = None
 except Exception as e:
@@ -70,17 +67,9 @@ from tools import (
     escalate_ticket,
     send_response,
     track_sentiment,
-    agent_tools
 )
 
 from prompts import CUSTOMER_SUCCESS_SYSTEM_PROMPT
-
-customer_success_agent = Agent(
-    name="CustomerSuccessFTE",
-    instructions=CUSTOMER_SUCCESS_SYSTEM_PROMPT,
-    model=MODEL_NAME,
-    tools=agent_tools
-)
 
 
 def check_escalation_triggers(message: str, sentiment_score: Optional[float] = None) -> tuple:
@@ -155,8 +144,7 @@ def process_message(customer_email: str, message: str, channel: str,
                     customer_name: Optional[str] = None) -> dict:
     """
     Process a customer message through the complete agent flow.
-    Uses OpenAI Agents SDK Runner for LLM interaction and tool orchestration.
-    Backward-compatible sync wrapper.
+    Uses raw OpenAI client for LLM interaction and direct tool orchestration.
 
     Args:
         customer_email: Customer email address
@@ -350,47 +338,11 @@ def process_message(customer_email: str, message: str, channel: str,
         }
 
 
-async def process_message_async(customer_email: str, message: str, channel: str,
-                                 customer_name: Optional[str] = None) -> dict:
-    """Process message using OpenAI Agents SDK Runner."""
-    start_time = time.time()
-    try:
-        agent_input = (
-            f"Channel: {channel}\n"
-            f"Customer email: {customer_email}\n"
-            f"Customer name: {customer_name or 'N/A'}\n\n"
-            f"Message: {message}"
-        )
-        result = await Runner.run(customer_success_agent, input=agent_input)
-
-        response_time = (time.time() - start_time) * 1000
-        return {
-            "response": result.final_output,
-            "ticket_id": None,
-            "escalated": False,
-            "escalation_reason": None,
-            "tool_calls_count": len(result.raw_responses),
-            "response_time_ms": response_time
-        }
-    except Exception as e:
-        logger.error(f"Agent SDK processing error: {e}")
-        response_time = (time.time() - start_time) * 1000
-        return {
-            "response": "Our AI is busy, a human will assist you shortly.",
-            "ticket_id": None,
-            "escalated": False,
-            "escalation_reason": None,
-            "tool_calls_count": 0,
-            "response_time_ms": response_time,
-            "error": str(e)
-        }
-
-
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(process_message_async(
+    result = process_message(
         customer_email="john.doe@techcorp.com",
         message="How do I add team members to my workspace?",
         channel="email",
         customer_name="John Doe"
-    ))
+    )
+    print(json.dumps(result, indent=2))

@@ -11,7 +11,6 @@ import os
 import json
 import logging
 from typing import Optional
-from agents import function_tool
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -178,11 +177,4 @@ def _search_product_docs(query: str, max_results: int = 5) -> list:
         return []
 
 
-agent_tools = [
-    function_tool(search_knowledge_base),
-    function_tool(create_ticket),
-    function_tool(get_customer_context),
-    function_tool(escalate_ticket),
-    function_tool(send_response),
-    function_tool(track_sentiment),
-]
+
