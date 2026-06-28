@@ -34,6 +34,8 @@ class SupportFormSubmission(BaseModel):
     category: str
     message: str
     priority: Optional[str] = 'medium'
+    channel: Optional[str] = "web_form"
+    form_version: Optional[str] = "1.0"
     
     @validator('name')
     def name_must_not_be_empty(cls, v):

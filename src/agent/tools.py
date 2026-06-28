@@ -21,7 +21,17 @@ logger = logging.getLogger(__name__)
 
 db = CRMDatabase()
 
+try:
+    from agents import function_tool as _agents_function_tool
+    def function_tool(func):
+        _agents_function_tool(func)
+        return func
+except ImportError:
+    def function_tool(func):
+        return func
 
+
+@function_tool
 def search_knowledge_base(query: str, max_results: int = 5) -> str:
     """Search product documentation for relevant information."""
     try:
@@ -40,6 +50,7 @@ def search_knowledge_base(query: str, max_results: int = 5) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
+@function_tool
 def create_ticket(customer_email: str, message: str, channel: str,
                   priority: str = "medium", customer_name: Optional[str] = None) -> str:
     """Create a support ticket for tracking. ALWAYS call at start of every conversation."""
@@ -59,6 +70,7 @@ def create_ticket(customer_email: str, message: str, channel: str,
         return json.dumps({"success": False, "error": str(e)})
 
 
+@function_tool
 def get_customer_context(customer_email: str) -> str:
     """Get customer's complete context including history and stats."""
     try:
@@ -95,6 +107,7 @@ def get_customer_context(customer_email: str) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
+@function_tool
 def escalate_ticket(ticket_id: str, reason: str, notes: str = "") -> str:
     """Escalate a ticket to human support."""
     try:
@@ -117,6 +130,7 @@ def escalate_ticket(ticket_id: str, reason: str, notes: str = "") -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
+@function_tool
 def send_response(ticket_id: str, response: str, channel: str) -> str:
     """Send response to customer via their channel. ALWAYS use this to reply."""
     try:
@@ -137,6 +151,7 @@ def send_response(ticket_id: str, response: str, channel: str) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
+@function_tool
 def track_sentiment(customer_id: str, sentiment_score: float) -> str:
     """Track customer sentiment and detect trends."""
     try:

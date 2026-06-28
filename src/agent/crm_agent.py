@@ -140,6 +140,34 @@ def analyze_sentiment_simple(message: str) -> float:
     return max(0.0, min(1.0, score))
 
 
+def _detect_islamic_greeting(message: str) -> bool:
+    """Check if customer used an Islamic greeting."""
+    greetings = [
+        "assalam o alaikum", "assalam-o-alaikum", "assalamualaikum",
+        "as-salamu alaykum", "walaikum assalam",
+        "salam", "سلام", "السلام علیکم", "السلام عليكم",
+        "salam alaikum", "salam-o-alaikum"
+    ]
+    msg_lower = message.lower().strip()
+    return any(g in msg_lower for g in greetings)
+
+
+def _detect_urdu(message: str) -> bool:
+    """Check if message contains Urdu script characters or Roman Urdu keywords."""
+    for c in message:
+        cp = ord(c)
+        if (0x0600 <= cp <= 0x06FF) or (0x0750 <= cp <= 0x077F) or (0xFB50 <= cp <= 0xFDFF) or (0xFE70 <= cp <= 0xFEFF):
+            return True
+    roman_urdu_keywords = ["mera", "tera", "kya", "kahan", "kahaan", "kaise", "kyun", "kyu", "nahi", "haan",
+                           "bhai", "aap", "tum", "hum", "yeh", "woh", "hai", "ho", "hain", "tha", "the",
+                           "thi", "apna", "tumhara", "karo", "karta", "karti", "kar", "raha", "rahi",
+                           "sakta", "sakti", "chahiye", "hoga", "hogee", "aaya", "aayi", "aaye",
+                           "jao", "ja", "jata", "jati", "aa", "ao", "lo", "do", "de", "le", "se", "ko"]
+    words = message.lower().split()
+    roman_count = sum(1 for w in words if w.strip("?.,!;:") in roman_urdu_keywords)
+    return roman_count >= 2
+
+
 def process_message(customer_email: str, message: str, channel: str,
                     customer_name: Optional[str] = None) -> dict:
     """
@@ -250,6 +278,26 @@ def process_message(customer_email: str, message: str, channel: str,
         ]) if search.get('results') and len(search['results']) > 0 else "No relevant documentation found."
 
         try:
+            system_prompt = CUSTOMER_SUCCESS_SYSTEM_PROMPT
+
+            if _detect_islamic_greeting(message):
+                system_prompt += "\n\n## Current Interaction\nCustomer opened with an Islamic greeting. You MUST begin your response with 'Assalam o alaikum!' (with exclamation mark)."
+
+            if _detect_urdu(message):
+                system_prompt += "\n\n## Language\nCustomer is writing in Urdu or mixing Urdu with English. Respond naturally in the same style."
+
+            name_ask_patterns = ["ap ka naam", "aap ka naam", "your name", "naam kya hai", "name kya hai", "kaun ho", "kon ho", "who are you"]
+            if any(kw in message.lower() for kw in name_ask_patterns):
+                system_prompt += "\n\n## Name Question\nThe customer asked for your name. Introduce yourself as Ayesha, your role as a customer support agent, and ask for their name warmly."
+
+            name_preference_patterns = ["ke naam se bulao", "naam se bulao", "call me", "bulao", "mera naam", "mujhe ... bulao"]
+            if any(kw in message.lower() for kw in name_preference_patterns):
+                system_prompt += "\n\n## Name Preference\nThe customer wants you to address them by a specific name or preference. Ackowledge this warmly (e.g., 'Bilkul!') and use their requested name going forward."
+
+            order_keywords = ["order", "ticket", "kahan", "kahaan", "status", "track", "delivery", "shipping", "tracking"]
+            if any(kw in message.lower() for kw in order_keywords) and ticket_id:
+                system_prompt += f"\n\n## Ticket Reference\nCustomer is asking about their order/ticket. Reference ticket #{ticket_id} in your response."
+
             token_limit = 300
             if channel == 'whatsapp':
                 token_limit = 150
@@ -257,7 +305,7 @@ def process_message(customer_email: str, message: str, channel: str,
             groq_response = groq_client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
-                    {"role": "system", "content": CUSTOMER_SUCCESS_SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Context:\n{kb_context}\n\nCustomer question: {message}"}
                 ],
                 max_tokens=token_limit,

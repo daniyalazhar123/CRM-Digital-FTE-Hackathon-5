@@ -44,6 +44,7 @@ from db.database import CRMDatabase
 # Import routers
 from channels.web_form_handler import router as web_form_router
 from channels.whatsapp_handler import router as whatsapp_router
+from channels.gmail_handler import router as gmail_router
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -71,6 +72,7 @@ app.add_middleware(
 
 app.include_router(web_form_router)
 app.include_router(whatsapp_router)
+app.include_router(gmail_router)
 
 # =============================================================================
 # HEALTH & METRICS

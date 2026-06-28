@@ -1,388 +1,223 @@
 """
-CRM Digital FTE - Gmail Handler (Production)
-Feature 2: Real Gmail Webhook with Google Cloud Pub/Sub
-
-Handles Gmail webhook notifications via Google Cloud Pub/Sub.
-Supports base64 decoding, MIME parsing, and multipart emails.
+Gmail Handler - Fixed Version
+Uses Gmail API via service account OR OAuth credentials.
+Replace dummy auth with real implementation.
 """
 
-import base64
-import email
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timezone
-import logging
+import os
 import json
+import base64
+import logging
+from email.mime.text import MIMEText
+from typing import Optional
+from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
+router = APIRouter(tags=["gmail"])
+
+# ── Auth ────────────────────────────────────────────────────────────────────────
+def _get_gmail_service():
+    """
+    Returns authenticated Gmail API service.
+    Priority:
+      1. GMAIL_SERVICE_ACCOUNT_JSON env var (JSON string of service account key)
+      2. GMAIL_SERVICE_ACCOUNT_FILE env var (path to JSON file)
+      3. OAuth credentials (GMAIL_CREDENTIALS_FILE)
+    """
+    try:
+        from googleapiclient.discovery import build
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import Request as GRequest
+        import google.oauth2.credentials
+
+        SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+        DELEGATED_EMAIL = os.getenv("GMAIL_DELEGATED_EMAIL", "")
+
+        # Option 1: Service account JSON as env variable
+        sa_json_str = os.getenv("GMAIL_SERVICE_ACCOUNT_JSON", "")
+        if sa_json_str:
+            sa_info = json.loads(sa_json_str)
+            credentials = service_account.Credentials.from_service_account_info(
+                sa_info, scopes=SCOPES
+            )
+            if DELEGATED_EMAIL:
+                credentials = credentials.with_subject(DELEGATED_EMAIL)
+            return build('gmail', 'v1', credentials=credentials)
+
+        # Option 2: Service account file path
+        sa_file = os.getenv("GMAIL_SERVICE_ACCOUNT_FILE", "")
+        if sa_file and os.path.exists(sa_file):
+            credentials = service_account.Credentials.from_service_account_file(
+                sa_file, scopes=SCOPES
+            )
+            if DELEGATED_EMAIL:
+                credentials = credentials.with_subject(DELEGATED_EMAIL)
+            return build('gmail', 'v1', credentials=credentials)
+
+        # Option 3: OAuth token file
+        token_file = os.getenv("GMAIL_TOKEN_FILE", "token.json")
+        creds_file = os.getenv("GMAIL_CREDENTIALS_FILE", "credentials.json")
+        if os.path.exists(token_file):
+            creds = google.oauth2.credentials.Credentials.from_authorized_user_file(
+                token_file, SCOPES
+            )
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(GRequest())
+            return build('gmail', 'v1', credentials=creds)
+
+        logger.error("No Gmail credentials configured. Set GMAIL_SERVICE_ACCOUNT_JSON or GMAIL_SERVICE_ACCOUNT_FILE in .env")
+        return None
+
+    except ImportError:
+        logger.error("google-api-python-client not installed. Run: pip install google-api-python-client google-auth")
+        return None
+    except Exception as e:
+        logger.error(f"Gmail auth error: {e}")
+        return None
 
 
-class GmailHandler:
-    """Handler for Gmail API integration with Pub/Sub support."""
+# ── Webhook ─────────────────────────────────────────────────────────────────────
+@router.post("/webhooks/gmail")
+async def gmail_webhook(request: Request):
+    """
+    Receives Gmail push notifications via Google Pub/Sub.
+    Setup: https://developers.google.com/gmail/api/guides/push
+    """
+    try:
+        body = await request.json()
+        # Pub/Sub message is base64-encoded
+        pubsub_message = body.get("message", {})
+        if not pubsub_message:
+            return JSONResponse({"status": "no message"})
 
-    def __init__(self, credentials_path: str = None, project_id: str = None):
-        """
-        Initialize Gmail handler.
+        data_b64 = pubsub_message.get("data", "")
+        if data_b64:
+            data = json.loads(base64.b64decode(data_b64).decode("utf-8"))
+            email_address = data.get("emailAddress", "")
+            history_id    = data.get("historyId", "")
+            logger.info(f"Gmail push: email={email_address}, historyId={history_id}")
 
-        Args:
-            credentials_path: Path to Gmail API credentials JSON
-            project_id: Google Cloud project ID for Pub/Sub
-        """
-        self.credentials_path = credentials_path
-        self.project_id = project_id
-        self.service = None
-        self._authenticated = False
+            # Process new emails
+            await _process_new_emails(email_address, history_id)
 
-    async def authenticate(self) -> bool:
-        """
-        Authenticate with Gmail API using OAuth2.
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        logger.error(f"Gmail webhook error: {e}")
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=200)
 
-        Returns:
-            bool: True if authentication successful
-        """
-        try:
-            # In production, use Google Auth library
-            # from google.oauth2 import service_account
-            # from googleapiclient.discovery import build
-            
-            # credentials = service_account.Credentials.from_service_account_file(
-            #     self.credentials_path,
-            #     scopes=['https://www.googleapis.com/auth/gmail.send']
-            # )
-            # self.service = build('gmail', 'v1', credentials=credentials)
-            
-            logger.info("Gmail authentication configured")
-            self._authenticated = True
-            return True
-        except Exception as e:
-            logger.error(f"Gmail authentication failed: {e}")
-            return False
 
-    async def process_pubsub_webhook(self, request_body: dict) -> List[dict]:
-        """
-        Process Gmail Pub/Sub push notification.
+async def _process_new_emails(email_address: str, history_id: str):
+    """Fetch and process new emails from Gmail."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _sync_process_emails, email_address, history_id)
 
-        Pub/Sub message format:
-        {
-            "message": {
-                "data": "base64-encoded JSON payload",
-                "attributes": {...},
-                "messageId": "...",
-                "publishTime": "..."
-            },
-            "subscription": "..."
-        }
 
-        Args:
-            request_body: Pub/Sub push request body
+def _sync_process_emails(email_address: str, history_id: str):
+    service = _get_gmail_service()
+    if not service:
+        logger.error("Gmail service not available — check credentials")
+        return
 
-        Returns:
-            List of processed message dictionaries
-        """
-        try:
-            messages = []
-            
-            # Extract Pub/Sub message
-            if 'message' not in request_body:
-                logger.warning("No message in Pub/Sub request")
-                return messages
-            
-            pubsub_message = request_body['message']
-            data = pubsub_message.get('data', '')
-            
-            if not data:
-                logger.warning("No data in Pub/Sub message")
-                return messages
-            
-            # Decode base64 data
-            try:
-                decoded_bytes = base64.b64decode(data)
-                decoded_data = decoded_bytes.decode('utf-8')
-                payload = json.loads(decoded_data)
-            except Exception as decode_error:
-                logger.error(f"Failed to decode Pub/Sub message: {decode_error}")
-                return messages
-            
-            logger.info(f"Received Gmail Pub/Sub notification: {payload}")
-            
-            # Extract email details from payload
-            email_data = await self._parse_email_payload(payload)
-            
-            if email_data:
-                messages.append(email_data)
-            
-            return messages
-            
-        except Exception as e:
-            logger.error(f"Error processing Pub/Sub webhook: {e}")
-            return []
+    try:
+        # List unread messages
+        results = service.users().messages().list(
+            userId='me',
+            q='is:unread label:inbox',
+            maxResults=10
+        ).execute()
 
-    async def _parse_email_payload(self, payload: dict) -> Optional[dict]:
-        """
-        Parse email payload from Gmail API or Pub/Sub.
+        messages = results.get('messages', [])
+        for msg_ref in messages:
+            msg = service.users().messages().get(
+                userId='me',
+                id=msg_ref['id'],
+                format='full'
+            ).execute()
+            _handle_email(service, msg)
 
-        Args:
-            payload: Email payload from Gmail
+    except Exception as e:
+        logger.error(f"Email processing error: {e}")
 
-        Returns:
-            dict with email details or None
-        """
-        try:
-            # Handle direct Gmail API payload
-            if 'payload' in payload:
-                return await self._parse_gmail_payload(payload)
-            
-            # Handle simple webhook format
-            if 'from' in payload or 'From' in payload:
-                return {
-                    'channel': 'email',
-                    'channel_message_id': payload.get('id', payload.get('messageId')),
-                    'customer_email': self._extract_email(payload.get('from', payload.get('From', ''))),
-                    'subject': payload.get('subject', payload.get('Subject', '')),
-                    'content': payload.get('body', payload.get('Body', payload.get('text', ''))),
-                    'received_at': payload.get('received_at', payload.get('timestamp', datetime.now(timezone.utc).isoformat())),
-                    'thread_id': payload.get('threadId'),
-                    'raw_payload': payload
-                }
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error parsing email payload: {e}")
-            return None
 
-    async def _parse_gmail_payload(self, gmail_message: dict) -> dict:
-        """
-        Parse Gmail API message payload with MIME support.
+def _handle_email(service, msg: dict):
+    """Extract email data and route through CRM agent."""
+    try:
+        headers = {h['name']: h['value'] for h in msg['payload'].get('headers', [])}
+        sender   = headers.get('From', '')
+        subject  = headers.get('Subject', '')
+        msg_id   = msg.get('id', '')
 
-        Args:
-            gmail_message: Gmail API message object
+        # Extract body
+        body_text = _extract_body(msg['payload'])
+        if not body_text:
+            return
 
-        Returns:
-            dict with parsed email details
-        """
-        try:
-            payload = gmail_message.get('payload', {})
-            headers = {h['name']: h['value'] for h in payload.get('headers', [])}
-            
-            # Extract basic fields
-            from_header = headers.get('From', '')
-            subject = headers.get('Subject', '')
-            thread_id = gmail_message.get('threadId')
-            message_id = gmail_message.get('id')
-            
-            # Extract email address from From header
-            customer_email = self._extract_email(from_header)
-            
-            # Extract body content
-            body, html_body = await self._extract_body_content(payload)
-            
-            return {
-                'channel': 'email',
-                'channel_message_id': message_id,
-                'customer_email': customer_email,
-                'subject': subject,
-                'content': body or html_body or '',
-                'html_content': html_body,
-                'received_at': datetime.now(timezone.utc).isoformat(),
-                'thread_id': thread_id,
-                'headers': headers,
-                'raw_payload': gmail_message
-            }
-            
-        except Exception as e:
-            logger.error(f"Error parsing Gmail payload: {e}")
-            return {
-                'channel': 'email',
-                'channel_message_id': gmail_message.get('id'),
-                'customer_email': '',
-                'subject': '',
-                'content': '',
-                'received_at': datetime.now(timezone.utc).isoformat(),
-                'thread_id': gmail_message.get('threadId'),
-                'error': str(e)
-            }
+        logger.info(f"Processing email from {sender}: {subject}")
 
-    async def _extract_body_content(self, payload: dict) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Extract text and HTML body from Gmail payload.
+        # Route through CRM agent
+        import sys, os as _os
+        sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..'))
+        from agent.crm_agent import process_message
 
-        Supports:
-        - Simple text/plain
-        - Multipart/alternative
-        - Multipart/mixed
-        - Nested multipart
-
-        Args:
-            payload: Gmail payload object
-
-        Returns:
-            Tuple of (text_body, html_body)
-        """
-        text_body = None
-        html_body = None
-        
-        try:
-            # Check for direct body
-            if 'body' in payload and payload['body'].get('data'):
-                body_data = payload['body']['data']
-                decoded = base64.urlsafe_b64decode(body_data).decode('utf-8')
-                
-                if payload.get('mimeType') == 'text/plain':
-                    text_body = decoded
-                elif payload.get('mimeType') == 'text/html':
-                    html_body = decoded
-            
-            # Check for multipart
-            if 'parts' in payload:
-                for part in payload['parts']:
-                    mime_type = part.get('mimeType', '')
-                    
-                    if mime_type == 'text/plain':
-                        if 'body' in part and part['body'].get('data'):
-                            text_body = base64.urlsafe_b64decode(
-                                part['body']['data']
-                            ).decode('utf-8')
-                    
-                    elif mime_type == 'text/html':
-                        if 'body' in part and part['body'].get('data'):
-                            html_body = base64.urlsafe_b64decode(
-                                part['body']['data']
-                            ).decode('utf-8')
-                    
-                    # Handle nested multipart
-                    elif mime_type.startswith('multipart/'):
-                        nested_text, nested_html = await self._extract_body_content(part)
-                        text_body = text_body or nested_text
-                        html_body = html_body or nested_html
-            
-        except Exception as e:
-            logger.error(f"Error extracting body content: {e}")
-        
-        return text_body, html_body
-
-    def _extract_email(self, from_header: str) -> str:
-        """
-        Extract email address from From header.
-
-        Handles formats:
-        - "John Doe <john@example.com>"
-        - "john@example.com"
-        - "<john@example.com>"
-
-        Args:
-            from_header: From header string
-
-        Returns:
-            str: Email address
-        """
+        # Extract email address from "Name <email>" format
         import re
-        
-        if not from_header:
-            return ''
-        
-        # Try to extract from angle brackets
-        match = re.search(r'<([^>]+)>', from_header)
-        if match:
-            return match.group(1).strip()
-        
-        # Return as-is if no brackets (might already be email)
-        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-        match = re.search(email_pattern, from_header)
-        if match:
-            return match.group(0)
-        
-        return from_header.strip()
+        email_match = re.search(r'<(.+?)>', sender)
+        customer_email = email_match.group(1) if email_match else sender
 
-    async def get_message(self, message_id: str) -> Optional[dict]:
-        """
-        Fetch a Gmail message by ID.
+        result = process_message(
+            customer_email=customer_email,
+            message=body_text,
+            channel="email",
+            customer_name=sender.split('<')[0].strip() if '<' in sender else None
+        )
 
-        Args:
-            message_id: Gmail message ID
+        # Send reply
+        reply_text = result.get("response", "")
+        if reply_text:
+            _send_reply(service, msg_id, sender, subject, reply_text)
 
-        Returns:
-            dict with email details or None
-        """
-        try:
-            if not self._authenticated:
-                await self.authenticate()
+        # Mark as read
+        service.users().messages().modify(
+            userId='me',
+            id=msg_id,
+            body={'removeLabelIds': ['UNREAD']}
+        ).execute()
 
-            if not self._authenticated or not self.service:
-                raise RuntimeError(
-                    "Gmail API not authenticated. Set up Gmail service account credentials "
-                    "(GOOGLE_APPLICATION_CREDENTIALS) and google-auth + google-api-python-client "
-                    "dependencies to enable real Gmail integration."
-                )
+    except Exception as e:
+        logger.error(f"Email handling error: {e}")
 
-            message = self.service.users().messages().get(
-                userId='me', id=message_id, format='full'
-            ).execute()
-            return await self._parse_gmail_payload(message)
 
-        except Exception as e:
-            logger.error(f"Error fetching Gmail message: {e}")
-            return None
+def _extract_body(payload: dict) -> str:
+    """Extract plain text body from Gmail message payload."""
+    if payload.get('mimeType') == 'text/plain':
+        data = payload.get('body', {}).get('data', '')
+        if data:
+            return base64.urlsafe_b64decode(data).decode('utf-8', errors='replace')
 
-    async def send_reply(self, to_email: str, subject: str, body: str,
-                         thread_id: str = None, html: bool = False) -> dict:
-        """
-        Send email reply via Gmail API.
+    for part in payload.get('parts', []):
+        text = _extract_body(part)
+        if text:
+            return text
+    return ""
 
-        Args:
-            to_email: Recipient email address
-            subject: Email subject
-            body: Email body text
-            thread_id: Optional Gmail thread ID for threading
-            html: Whether body is HTML
 
-        Returns:
-            dict with delivery status
-        """
-        try:
-            if not self._authenticated:
-                await self.authenticate()
+def _send_reply(service, original_msg_id: str, to: str, subject: str, body: str):
+    """Send email reply via Gmail API."""
+    try:
+        if not subject.lower().startswith('re:'):
+            subject = f"Re: {subject}"
 
-            if not self._authenticated or not self.service:
-                raise RuntimeError(
-                    "Gmail API not authenticated. Set up Gmail service account credentials "
-                    "to enable real email sending."
-                )
+        mime_msg = MIMEText(body)
+        mime_msg['to']      = to
+        mime_msg['subject'] = subject
 
-            # Create MIME message
-            message = MIMEMultipart('alternative') if html else MIMEText(body)
-            message['to'] = to_email
-            message['subject'] = f"Re: {subject}" if not subject.startswith('Re:') else subject
-            
-            if html:
-                message.attach(MIMEText(body, 'plain'))
-                message.attach(MIMEText(body, 'html'))
-
-            raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-            result = self.service.users().messages().send(
-                userId='me', 
-                body={'raw': raw, 'threadId': thread_id}
-            ).execute()
-
-            return {
-                'channel_message_id': result.get('id'),
-                'delivery_status': 'sent',
-                'thread_id': thread_id
-            }
-
-        except Exception as e:
-            logger.error(f"Error sending Gmail reply: {e}")
-            raise
-
-    async def process_webhook(self, payload: dict) -> List[dict]:
-        """
-        Legacy webhook processor - delegates to Pub/Sub processor.
-
-        Args:
-            payload: Webhook payload
-
-        Returns:
-            List of message dictionaries
-        """
-        return await self.process_pubsub_webhook(payload)
+        raw = base64.urlsafe_b64encode(mime_msg.as_bytes()).decode()
+        service.users().messages().send(
+            userId='me',
+            body={'raw': raw, 'threadId': original_msg_id}
+        ).execute()
+        logger.info(f"Email reply sent to {to}")
+    except Exception as e:
+        logger.error(f"Email send error: {e}")
