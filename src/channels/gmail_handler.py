@@ -12,8 +12,6 @@ import logging
 import time
 import re
 import asyncio
-import functools
-from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
 from typing import Optional
 from fastapi import APIRouter, Request
@@ -28,24 +26,10 @@ from db.database import CRMDatabase
 from agent.crm_agent import process_message
 
 from cache.redis_client import get_cache
-from workers.kafka_producer import get_producer, KafkaTopics
+from workers.kafka_producer import publish_to_kafka, KafkaTopics
 from workers.metrics_collector import get_metrics_store
 
 db = CRMDatabase()
-
-_kafka_executor = ThreadPoolExecutor(max_workers=2)
-
-
-def _publish_kafka_sync(topic: str, message: dict):
-    """Publish to Kafka synchronously (wraps async in executor)."""
-    try:
-        async def _publish():
-            p = get_producer()
-            await p.start()
-            await p.publish(topic, message)
-        asyncio.run(_publish())
-    except Exception as e:
-        logger.warning(f"[KAFKA] Publish to {topic} failed: {e}")
 
 # ── Retry Logic ─────────────────────────────────────────────────────────────────
 
@@ -306,7 +290,7 @@ def _handle_email(service, msg: dict):
     db.mark_email_processed(email_data["msg_id"])
 
     # ── Publish to Kafka ────────────────────────────────────────────────────
-    _publish_kafka_sync(KafkaTopics.EMAIL_RECEIVED, {
+    publish_to_kafka(KafkaTopics.EMAIL_RECEIVED, {
         "event_type": "email_received",
         "msg_id": email_data["msg_id"],
         "thread_id": email_data["thread_id"],
@@ -315,22 +299,13 @@ def _handle_email(service, msg: dict):
         "channel": "email",
     })
     if result.get("ticket_id"):
-        _publish_kafka_sync(KafkaTopics.TICKET_CREATED, {
+        publish_to_kafka(KafkaTopics.TICKET_CREATED, {
             "event_type": "ticket_created",
             "ticket_id": result["ticket_id"],
             "customer_email": email_data["customer_email"],
             "channel": "email",
         })
 
-    # ── Record metrics ──────────────────────────────────────────────────────
-    try:
-        metrics = get_metrics_store()
-        metrics.record_response_time(
-            time.time() - globals().get("_email_start_time", time.time()),
-            "email"
-        )
-    except Exception:
-        pass
     logger.info(f"[GMAIL] Message {email_data['msg_id']} processed successfully")
 
 

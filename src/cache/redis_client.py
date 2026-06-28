@@ -12,6 +12,8 @@ Provides:
 import os
 import json
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Any
 from urllib.parse import urlparse
 
@@ -165,13 +167,17 @@ class RedisCache:
         self._pool = None
 
     # Synchronous close for backward compatibility
+    _close_executor = ThreadPoolExecutor(max_workers=1)
+
     def close_sync(self):
         """Close all connections (sync wrapper)."""
         try:
-            asyncio.run(self.close())
+            asyncio.get_running_loop()
         except RuntimeError:
-            # Already in event loop — skip sync close
-            pass
+            asyncio.run(self.close())
+            return
+        # Already in a running loop — run in executor thread
+        self._close_executor.submit(asyncio.run, self.close()).result()
 
 
 # ── Singleton ──────────────────────────────────────────────────────────────────

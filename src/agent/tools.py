@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import sys
@@ -23,6 +24,19 @@ from cache.redis_client import cached_kb_search, cache_kb_search, cached_custome
 logger = logging.getLogger(__name__)
 
 db = CRMDatabase()
+
+_async_runner = ThreadPoolExecutor(max_workers=2)
+
+
+def _run_async(coro):
+    """Run an async coroutine from sync context, safely avoiding
+    RuntimeError when an event loop is already running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    fut = _async_runner.submit(asyncio.run, coro)
+    return fut.result()
 
 # =============================================================================
 # PLAIN FUNCTIONS — callable directly, backward compatible
@@ -39,7 +53,7 @@ def search_knowledge_base(query: str, max_results: int = 5) -> str:
         logger.info(f"Searching KB for: {query[:80]}")
 
         # ── Check Redis cache first ──
-        cached = asyncio.run(cached_kb_search(query, max_results))
+        cached = _run_async(cached_kb_search(query, max_results))
         if cached is not None:
             logger.info("[REDIS] KB cache HIT for: %s", query[:80])
             return json.dumps({
@@ -65,7 +79,7 @@ def search_knowledge_base(query: str, max_results: int = 5) -> str:
         )
 
         # ── Store in Redis cache ──
-        asyncio.run(cache_kb_search(query, results, max_results))
+        _run_async(cache_kb_search(query, results, max_results))
 
         return json.dumps({
             "success": True,
@@ -93,7 +107,7 @@ def create_ticket(customer_email: str, message: str, channel: str,
 
         # ── Invalidate customer cache (stats changed) ──
         identifier = customer.get('email') or customer.get('phone') or customer_email
-        asyncio.run(invalidate_customer_cache(identifier))
+        _run_async(invalidate_customer_cache(identifier))
 
         return json.dumps({"success": True, "ticket_id": ticket['id'], "customer_id": customer['id'], "status": "open"})
     except Exception as e:
@@ -111,7 +125,7 @@ def get_customer_context(customer_email: str) -> str:
         logger.info(f"Getting context for {customer_email}")
 
         # ── Check Redis cache first ──
-        cached = asyncio.run(cached_customer_lookup(customer_email))
+        cached = _run_async(cached_customer_lookup(customer_email))
         if cached is not None:
             logger.info("[REDIS] Customer cache HIT for: %s", customer_email)
             return json.dumps({
@@ -150,7 +164,7 @@ def get_customer_context(customer_email: str) -> str:
             "history": serializable_history,
             "stats": serializable_stats,
         }
-        asyncio.run(cache_customer_lookup(customer_email, cache_payload))
+        _run_async(cache_customer_lookup(customer_email, cache_payload))
 
         return json.dumps({
             "success": True,

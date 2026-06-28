@@ -8,6 +8,8 @@ Handles ticket ingestion, escalations, and metrics publishing.
 
 import json
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
@@ -203,3 +205,27 @@ async def publish_escalation_event(escalation_data: Dict[str, Any]):
     """Convenience function to publish escalation event."""
     producer = get_producer()
     await producer.publish_escalation(escalation_data)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Unified Kafka publisher for sync contexts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_kafka_async_executor = ThreadPoolExecutor(max_workers=2)
+
+
+def publish_to_kafka(topic: str, message: dict):
+    """Publish to Kafka synchronously, safely from sync or async context."""
+    try:
+        async def _publish():
+            p = get_producer()
+            await p.start()
+            await p.publish(topic, message)
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(_publish())
+            return
+        _kafka_async_executor.submit(asyncio.run, _publish()).result()
+    except Exception as e:
+        logger.warning("[KAFKA] Publish to %s failed: %s", topic, e)

@@ -7,9 +7,11 @@ Handles web form submissions via FastAPI endpoints.
 
 import os
 import sys
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr, validator
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 import logging
 
@@ -22,6 +24,8 @@ from agent.crm_agent import process_message
 from db.database import CRMDatabase
 
 db = CRMDatabase()
+
+_web_form_executor = ThreadPoolExecutor(max_workers=4)
 
 router = APIRouter(prefix="/support", tags=["support-form"])
 
@@ -78,12 +82,15 @@ async def submit_support_form(submission: SupportFormSubmission):
     try:
         logger.info(f"Processing support form from {submission.email}")
         
-        # Process with CRM agent
-        result = process_message(
-            customer_email=submission.email,
-            message=f"Subject: {submission.subject}\nCategory: {submission.category}\n\n{submission.message}",
-            channel="web_form",
-            customer_name=submission.name
+        # Process with CRM agent (run in executor to avoid blocking async loop)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _web_form_executor,
+            process_message,
+            submission.email,
+            f"Subject: {submission.subject}\nCategory: {submission.category}\n\n{submission.message}",
+            "web_form",
+            submission.name,
         )
         
         logger.info(f"Ticket created: {result['ticket_id']}")

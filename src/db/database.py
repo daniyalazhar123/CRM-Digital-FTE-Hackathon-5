@@ -7,6 +7,7 @@ Provides CRUD operations, vector search, and migration capabilities.
 """
 
 import psycopg2
+import psycopg2.pool
 from psycopg2 import pool, sql, extras
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timezone
@@ -78,12 +79,17 @@ class DatabasePool:
         for attempt in range(MAX_RETRIES):
             try:
                 return self._pool.getconn()
-            except psycopg2.pool.PoolExhaustedError:
+            except psycopg2.pool.PoolError:
                 if attempt == MAX_RETRIES - 1:
                     raise
-                # Exponential backoff: 0.5s, 1s, 2s, 4s, 8s
                 delay = RETRY_DELAY * (RETRY_BACKOFF_MULTIPLIER ** attempt)
                 print(f"Connection pool exhausted, retrying in {delay}s...")
+                time.sleep(delay)
+            except Exception as e:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                delay = RETRY_DELAY * (RETRY_BACKOFF_MULTIPLIER ** attempt)
+                print(f"Connection attempt {attempt + 1} failed: {e}, retrying in {delay}s...")
                 time.sleep(delay)
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:

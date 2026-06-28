@@ -10,9 +10,7 @@ import os
 import json
 import logging
 import time
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from typing import Optional, Tuple
 from dotenv import load_dotenv
 
 import sys
@@ -45,32 +43,9 @@ ESCALATION_KEYWORDS = {
     "human_requested": ["human", "real person", "agent", "manager", "supervisor"]
 }
 
+from workers.kafka_producer import publish_to_kafka, KafkaTopics
+
 db = CRMDatabase()
-
-_kafka_pool = ThreadPoolExecutor(max_workers=2)
-
-
-def _publish_kafka(topic: str, message: dict):
-    """Publish to Kafka in a background thread — safe from sync/async context."""
-    try:
-        from workers.kafka_producer import get_producer, KafkaTopics
-        async def _do():
-            p = get_producer()
-            await p.start()
-            await p.publish(topic, message)
-        asyncio.run(_do())
-    except RuntimeError:
-        # Already in an event loop — spawn a thread
-        def _in_thread():
-            import asyncio as _a
-            try:
-                from workers.kafka_producer import get_producer as _gp, KafkaTopics as _KT
-                _a.run(_gp().publish(topic, message))
-            except Exception:
-                pass
-        _kafka_pool.submit(_in_thread)
-    except Exception as e:
-        logger.warning(f"[KAFKA] Publish to {topic} failed: {e}")
 
 
 def _record_prometheus(kind: str, **labels):
@@ -130,7 +105,7 @@ else:
     logger.warning("No GROQ_API_KEY set — agent will use fallback responses")
 
 
-def check_escalation_triggers(message: str, sentiment_score: Optional[float] = None) -> tuple:
+def check_escalation_triggers(message: str, sentiment_score: Optional[float] = None) -> Tuple[bool, Optional[str]]:
     """Check if message triggers escalation.
 
     Returns:
@@ -228,7 +203,7 @@ def _detect_urdu(message: str) -> bool:
 
 def _extract_agent_metadata(items: list) -> dict:
     """Parse Agent SDK conversation items for tool call results (ticket_id, customer_id, escalation)."""
-    meta = {
+    meta: dict = {
         "ticket_id": None,
         "customer_id": None,
         "escalated": False,
@@ -354,7 +329,7 @@ def process_message(customer_email: str, message: str, channel: str,
 
         if meta["ticket_id"]:
             _record_prometheus("ticket_created")
-            _publish_kafka("ticket.created", {
+            publish_to_kafka(KafkaTopics.TICKET_CREATED, {
                 "event_type": "ticket_created",
                 "ticket_id": meta["ticket_id"],
                 "customer_email": customer_email,
@@ -363,7 +338,7 @@ def process_message(customer_email: str, message: str, channel: str,
 
         if meta["escalated"]:
             _record_prometheus("escalation", reason=meta["escalation_reason"])
-            _publish_kafka("metrics.events", {
+            publish_to_kafka(KafkaTopics.METRICS_EVENTS, {
                 "event_type": "escalation",
                 "channel": channel,
                 "reason": meta["escalation_reason"],
