@@ -1,418 +1,269 @@
 """
-CRM Digital FTE - Redis Client
-Feature 4: Redis Caching Layer
+CRM Digital FTE — Redis Cache Client
 
-Provides connection pooling and caching for:
-- Knowledge base search results (1hr TTL)
-- Customer lookups (1hr TTL)
-- Session data
+Provides:
+- Connection pooling via redis.asyncio
+- REDIS_URL parsing (supports redis:// or rediss:// with auth)
+- Graceful reconnect
+- Configurable TTL (defaults: KB 1hr, customer 1hr, ticket 30min)
+- Cache helpers: cached_kb_search, cached_customer_lookup, cached_ticket_lookup
 """
 
 import os
 import json
 import logging
-from typing import Optional, Any, Dict, List
-from datetime import timedelta
-import hashlib
-
-try:
-    import redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-    redis = None
+from typing import Optional, Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-# Configuration
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
-REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
-REDIS_DB = int(os.getenv('REDIS_DB', '0'))
+# ── Configuration ──────────────────────────────────────────────────────────────
 
-# TTL settings (in seconds)
-DEFAULT_TTL = 3600  # 1 hour
-KB_SEARCH_TTL = 3600  # 1 hour
-CUSTOMER_LOOKUP_TTL = 3600  # 1 hour
-SESSION_TTL = 86400  # 24 hours
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+KB_SEARCH_TTL = int(os.getenv("REDIS_KB_TTL", "3600"))       # 1 hour
+CUSTOMER_TTL = int(os.getenv("REDIS_CUSTOMER_TTL", "3600"))   # 1 hour
+TICKET_TTL = int(os.getenv("REDIS_TICKET_TTL", "1800"))       # 30 min
+DEFAULT_TTL = int(os.getenv("REDIS_DEFAULT_TTL", "3600"))     # 1 hour
 
-# Connection pool settings
-POOL_MAX_CONNECTIONS = 50
-POOL_MIN_IDLE = 5
-POOL_TIMEOUT = 5
+POOL_SIZE = int(os.getenv("REDIS_POOL_SIZE", "20"))
+SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "5"))
 
+# ── Client ─────────────────────────────────────────────────────────────────────
 
-class RedisClient:
-    """
-    Redis client with connection pooling.
-    
+class RedisCache:
+    """Async Redis cache with auto-reconnect and connection pooling.
+
     Usage:
-        client = RedisClient()
-        await client.set('key', 'value')
-        value = await client.get('key')
+        cache = RedisCache()
+        await cache.set("key", value, ttl=300)
+        val = await cache.get("key")
+        ttl = await cache.ttl("key")
+        await cache.close()
     """
-    
+
     _instance = None
-    _pool = None
-    
-    def __new__(cls):
+
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
-            cls._instance = super(RedisClient, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
+            cls._instance._redis = None
+            cls._instance._pool = None
         return cls._instance
-    
+
     def __init__(self):
-        if not REDIS_AVAILABLE:
-            logger.warning("Redis library not installed, caching disabled")
-            self._client = None
-            return
-        
-        if self._pool is None:
-            self._create_pool()
-        
-        self._client = None
-    
-    def _create_pool(self):
-        """Create Redis connection pool."""
+        pass
+
+    async def _connect(self):
+        """Lazy connect — creates connection pool on first use."""
+        if self._redis is not None:
+            try:
+                await self._redis.ping()
+                return
+            except Exception:
+                logger.warning("[REDIS] Connection lost, reconnecting...")
+                self._redis = None
+                self._pool = None
+
         try:
-            self._pool = redis.ConnectionPool(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
-                password=REDIS_PASSWORD if REDIS_PASSWORD else None,
-                db=REDIS_DB,
-                max_connections=POOL_MAX_CONNECTIONS,
+            import redis.asyncio as aioredis
+            parsed = urlparse(REDIS_URL)
+
+            password = None
+            if parsed.password:
+                password = parsed.password
+
+            self._pool = aioredis.ConnectionPool.from_url(
+                REDIS_URL,
+                max_connections=POOL_SIZE,
                 decode_responses=True,
-                socket_timeout=POOL_TIMEOUT,
-                socket_connect_timeout=POOL_TIMEOUT,
-                retry_on_timeout=True
+                socket_timeout=SOCKET_TIMEOUT,
+                socket_connect_timeout=SOCKET_TIMEOUT,
+                retry_on_timeout=True,
+                health_check_interval=30,
             )
-            logger.info(f"✓ Redis pool created: {REDIS_HOST}:{REDIS_PORT}")
+            self._redis = aioredis.Redis(connection_pool=self._pool)
+            await self._redis.ping()
+            logger.info("[REDIS] Connected to %s@%s/%s",
+                        parsed.hostname, parsed.port or 6379, (parsed.path or "/0").lstrip("/"))
+        except ImportError:
+            logger.warning("[REDIS] redis.asyncio not installed — caching disabled")
         except Exception as e:
-            logger.error(f"✗ Failed to create Redis pool: {e}")
+            logger.warning("[REDIS] Connection failed: %s", e)
+            self._redis = None
             self._pool = None
-    
-    def _get_client(self) -> Optional['redis.Redis']:
-        """Get Redis client from pool."""
-        if not REDIS_AVAILABLE or not self._pool:
-            return None
-        
-        try:
-            if self._client is None:
-                self._client = redis.Redis(connection_pool=self._pool)
-                # Test connection
-                self._client.ping()
-            return self._client
-        except Exception as e:
-            logger.error(f"Redis connection error: {e}")
-            self._client = None
-            return None
-    
+
     async def get(self, key: str) -> Optional[Any]:
-        """
-        Get value from cache.
-        
-        Args:
-            key: Cache key
-            
-        Returns:
-            Cached value or None
-        """
-        client = self._get_client()
-        if not client:
+        """Get a value from cache. Returns None if missing."""
+        await self._connect()
+        if self._redis is None:
             return None
-        
         try:
-            value = client.get(key)
-            if value:
-                logger.debug(f"Cache HIT: {key}")
-                # Try to parse as JSON
-                try:
-                    return json.loads(value)
-                except (json.JSONDecodeError, TypeError):
-                    return value
-            logger.debug(f"Cache MISS: {key}")
-            return None
+            val = await self._redis.get(key)
+            if val is None:
+                return None
+            try:
+                return json.loads(val)
+            except (json.JSONDecodeError, TypeError):
+                return val
         except Exception as e:
-            logger.error(f"Redis get error: {e}")
+            logger.warning("[REDIS] GET error: %s", e)
             return None
-    
+
     async def set(self, key: str, value: Any, ttl: int = DEFAULT_TTL) -> bool:
-        """
-        Set value in cache with TTL.
-        
-        Args:
-            key: Cache key
-            value: Value to cache
-            ttl: Time to live in seconds
-            
-        Returns:
-            bool: True if successful
-        """
-        client = self._get_client()
-        if not client:
+        """Set a value in cache with TTL (seconds)."""
+        await self._connect()
+        if self._redis is None:
             return False
-        
         try:
-            # Serialize to JSON if not string
             if not isinstance(value, str):
                 value = json.dumps(value)
-            
-            success = client.setex(key, ttl, value)
-            if success:
-                logger.debug(f"Cache SET: {key} (TTL: {ttl}s)")
-            return success
+            await self._redis.setex(key, ttl, value)
+            return True
         except Exception as e:
-            logger.error(f"Redis set error: {e}")
+            logger.warning("[REDIS] SET error: %s", e)
             return False
-    
+
+    async def ttl(self, key: str) -> int:
+        """Get remaining TTL for a key. Returns -2 if missing, -1 if no TTL."""
+        await self._connect()
+        if self._redis is None:
+            return -2
+        try:
+            return await self._redis.ttl(key)
+        except Exception:
+            return -2
+
     async def delete(self, key: str) -> bool:
-        """
-        Delete key from cache.
-        
-        Args:
-            key: Cache key
-            
-        Returns:
-            bool: True if deleted
-        """
-        client = self._get_client()
-        if not client:
+        """Delete a key."""
+        await self._connect()
+        if self._redis is None:
             return False
-        
         try:
-            return client.delete(key) > 0
+            n = await self._redis.delete(key)
+            return n > 0
         except Exception as e:
-            logger.error(f"Redis delete error: {e}")
+            logger.warning("[REDIS] DELETE error: %s", e)
             return False
-    
-    async def exists(self, key: str) -> bool:
-        """Check if key exists in cache."""
-        client = self._get_client()
-        if not client:
-            return False
-        
-        try:
-            return client.exists(key) > 0
-        except Exception as e:
-            logger.error(f"Redis exists error: {e}")
-            return False
-    
-    async def invalidate_pattern(self, pattern: str) -> int:
-        """
-        Invalidate all keys matching pattern.
-        
-        Args:
-            pattern: Key pattern (e.g., "kb_search:*")
-            
-        Returns:
-            Number of keys deleted
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        
-        try:
-            keys = client.keys(pattern)
-            if keys:
-                return client.delete(*keys)
-            return 0
-        except Exception as e:
-            logger.error(f"Redis invalidate error: {e}")
-            return 0
-    
+
     async def health_check(self) -> bool:
-        """Check Redis connection health."""
-        client = self._get_client()
-        if not client:
-            return False
-        
+        """Ping Redis. Returns True if connected."""
         try:
-            return client.ping()
+            if self._redis is None:
+                await self._connect()
+            if self._redis is None:
+                return False
+            return await self._redis.ping()
         except Exception:
             return False
-    
-    def close(self):
-        """Close Redis connections."""
+
+    async def close(self):
+        """Close all connections (async)."""
         if self._pool:
-            self._pool.disconnect()
-            logger.info("✓ Redis connections closed")
+            await self._pool.disconnect()
+            logger.info("[REDIS] Connections closed")
+        self._redis = None
+        self._pool = None
+
+    # Synchronous close for backward compatibility
+    def close_sync(self):
+        """Close all connections (sync wrapper)."""
+        try:
+            asyncio.run(self.close())
+        except RuntimeError:
+            # Already in event loop — skip sync close
+            pass
 
 
-# Global client instance
-_redis_client = None
+# ── Singleton ──────────────────────────────────────────────────────────────────
+
+_cache_instance: Optional[RedisCache] = None
 
 
-def get_redis_client() -> RedisClient:
-    """Get or create Redis client singleton."""
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = RedisClient()
-    return _redis_client
+def get_cache() -> RedisCache:
+    global _cache_instance
+    if _cache_instance is None:
+        _cache_instance = RedisCache()
+    return _cache_instance
 
 
-# =============================================================================
-# CACHING DECORATORS
-# =============================================================================
+# ── Helper functions for specific cache types ──────────────────────────────────
+
+async def cached_kb_search(query: str, max_results: int = 5) -> Optional[Any]:
+    """Return cached KB search results or None."""
+    cache = get_cache()
+    key = f"kb:{query[:100].strip().lower()}:{max_results}"
+    return await cache.get(key)
+
+
+async def cache_kb_search(query: str, results: Any, max_results: int = 5) -> bool:
+    """Cache KB search results."""
+    cache = get_cache()
+    key = f"kb:{query[:100].strip().lower()}:{max_results}"
+    return await cache.set(key, results, ttl=KB_SEARCH_TTL)
+
+
+async def cached_customer_lookup(identifier: str) -> Optional[Any]:
+    """Return cached customer context or None."""
+    cache = get_cache()
+    key = f"customer:{identifier}"
+    return await cache.get(key)
+
+
+async def cache_customer_lookup(identifier: str, data: Any) -> bool:
+    """Cache customer context."""
+    cache = get_cache()
+    key = f"customer:{identifier}"
+    return await cache.set(key, data, ttl=CUSTOMER_TTL)
+
+
+async def cached_ticket_lookup(ticket_id: str) -> Optional[Any]:
+    """Return cached ticket data or None."""
+    cache = get_cache()
+    key = f"ticket:{ticket_id}"
+    return await cache.get(key)
+
+
+async def cache_ticket_lookup(ticket_id: str, data: Any) -> bool:
+    """Cache ticket data."""
+    cache = get_cache()
+    key = f"ticket:{ticket_id}"
+    return await cache.set(key, data, ttl=TICKET_TTL)
+
+
+async def invalidate_customer_cache(identifier: str) -> bool:
+    """Remove customer from cache (e.g. after data update)."""
+    cache = get_cache()
+    return await cache.delete(f"customer:{identifier}")
+
+
+async def invalidate_kb_cache(query: str, max_results: int = 5) -> bool:
+    """Remove a specific KB search from cache."""
+    cache = get_cache()
+    return await cache.delete(f"kb:{query[:100].strip().lower()}:{max_results}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Backward-compatible aliases (for existing tests)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RedisClient = RedisCache
+get_redis_client = get_cache
+
+# Legacy config constants (parsed from REDIS_URL for compat)
+REDIS_AVAILABLE = True  # Always True; graceful degradation handles connection failures
+CUSTOMER_LOOKUP_TTL = CUSTOMER_TTL
+
+# Re-export REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB (parsed from URL)
+_parsed_url = urlparse(REDIS_URL)
+REDIS_HOST = _parsed_url.hostname or "localhost"
+REDIS_PORT = _parsed_url.port or 6379
+REDIS_PASSWORD = _parsed_url.password or ""
+REDIS_DB = int((_parsed_url.path or "/0").lstrip("/") or 0)
+
 
 def _make_cache_key(prefix: str, *args, **kwargs) -> str:
-    """
-    Generate cache key from arguments.
-    
-    Args:
-        prefix: Key prefix
-        *args: Positional arguments
-        **kwargs: Keyword arguments
-        
-    Returns:
-        Cache key string
-    """
-    # Create hash of arguments
-    key_data = f"{args}:{sorted(kwargs.items())}"
-    key_hash = hashlib.md5(key_data.encode()).hexdigest()
-    return f"{prefix}:{key_hash}"
-
-
-async def cached_kb_search(query: str, category: Optional[str] = None, 
-                           max_results: int = 5) -> Optional[List[Dict]]:
-    """
-    Get knowledge base search from cache.
-    
-    Args:
-        query: Search query
-        category: Optional category filter
-        max_results: Max results to return
-        
-    Returns:
-        Cached search results or None
-    """
-    client = get_redis_client()
-    key = _make_cache_key("kb_search", query, category=category, max_results=max_results)
-    
-    result = await client.get(key)
-    if result:
-        logger.info(f"Cache HIT for KB search: {query[:50]}...")
-        return result
-    
-    return None
-
-
-async def cache_kb_search(query: str, results: List[Dict], 
-                          category: Optional[str] = None,
-                          max_results: int = 5) -> bool:
-    """
-    Cache knowledge base search results.
-    
-    Args:
-        query: Search query
-        results: Search results to cache
-        category: Optional category filter
-        max_results: Max results
-        
-    Returns:
-        bool: True if cached successfully
-    """
-    client = get_redis_client()
-    key = _make_cache_key("kb_search", query, category=category, max_results=max_results)
-    
-    return await client.set(key, results, ttl=KB_SEARCH_TTL)
-
-
-async def cached_customer_lookup(identifier: str, identifier_type: str = 'email') -> Optional[Dict]:
-    """
-    Get customer lookup from cache.
-    
-    Args:
-        identifier: Email or phone
-        identifier_type: 'email' or 'phone'
-        
-    Returns:
-        Cached customer data or None
-    """
-    client = get_redis_client()
-    key = f"customer:{identifier_type}:{identifier}"
-    
-    result = await client.get(key)
-    if result:
-        logger.info(f"Cache HIT for customer: {identifier}")
-        return result
-    
-    return None
-
-
-async def cache_customer_lookup(identifier: str, customer_data: Dict,
-                                 identifier_type: str = 'email') -> bool:
-    """
-    Cache customer lookup results.
-    
-    Args:
-        identifier: Email or phone
-        customer_data: Customer data to cache
-        identifier_type: 'email' or 'phone'
-        
-    Returns:
-        bool: True if cached successfully
-    """
-    client = get_redis_client()
-    key = f"customer:{identifier_type}:{identifier}"
-    
-    return await client.set(key, customer_data, ttl=CUSTOMER_LOOKUP_TTL)
-
-
-async def invalidate_customer_cache(identifier: str, identifier_type: str = 'email') -> bool:
-    """
-    Invalidate customer cache.
-    
-    Args:
-        identifier: Email or phone
-        identifier_type: 'email' or 'phone'
-        
-    Returns:
-        bool: True if invalidated
-    """
-    client = get_redis_client()
-    key = f"customer:{identifier_type}:{identifier}"
-    
-    return await client.delete(key)
-
-
-# =============================================================================
-# MAIN (TESTING)
-# =============================================================================
-
-async def main():
-    """Test Redis client."""
-    print("="*60)
-    print("REDIS CLIENT TEST")
-    print("="*60)
-    
-    client = get_redis_client()
-    
-    # Test connection
-    healthy = await client.health_check()
-    print(f"Health check: {'✓ PASS' if healthy else '✗ FAIL'}")
-    
-    if healthy:
-        # Test set/get
-        await client.set("test_key", {"test": "value"}, ttl=60)
-        value = await client.get("test_key")
-        print(f"Set/Get test: {'✓ PASS' if value else '✗ FAIL'}")
-        
-        # Test delete
-        await client.delete("test_key")
-        value = await client.get("test_key")
-        print(f"Delete test: {'✓ PASS' if not value else '✗ FAIL'}")
-        
-        # Test caching helpers
-        await cache_kb_search("test query", [{"title": "Test"}])
-        cached = await cached_kb_search("test query")
-        print(f"KB cache test: {'✓ PASS' if cached else '✗ FAIL'}")
-        
-        await cache_customer_lookup("test@example.com", {"id": "123", "email": "test@example.com"})
-        cached = await cached_customer_lookup("test@example.com")
-        print(f"Customer cache test: {'✓ PASS' if cached else '✗ FAIL'}")
-    
-    print("="*60)
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    """Legacy cache key generator — kept for backward compatibility."""
+    parts = [prefix]
+    parts.extend(str(a) for a in args)
+    parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
+    return ":".join(parts)

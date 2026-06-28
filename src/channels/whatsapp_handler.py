@@ -6,6 +6,8 @@ Main fix: process_message sync call in async context using run_in_executor
 import os
 import logging
 import asyncio
+import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import Response
@@ -18,6 +20,31 @@ router = APIRouter(tags=["whatsapp"])
 TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER", "whatsapp:+14155238886")
 
 _executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _publish_kafka_sync(topic: str, message: dict):
+    """Publish to Kafka synchronously."""
+    try:
+        async def _publish():
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+            from workers.kafka_producer import get_producer, KafkaTopics
+            p = get_producer()
+            await p.start()
+            await p.publish(topic, message)
+        asyncio.run(_publish())
+    except Exception as e:
+        logger.warning(f"[KAFKA] Publish to {topic} failed: {e}")
+
+
+def _record_metrics_sync(channel: str):
+    """Record metric."""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from workers.metrics_collector import get_metrics_store
+        metrics = get_metrics_store()
+        metrics.record_response_time(0, channel)
+    except Exception:
+        pass
 
 
 def _run_agent(customer_phone: str, message_body: str, profile_name: str) -> str:
@@ -39,6 +66,22 @@ def _run_agent(customer_phone: str, message_body: str, profile_name: str) -> str
         # WhatsApp: 1600 char limit
         if len(reply) > 1600:
             reply = reply[:1597] + "..."
+
+        # ── Publish to Kafka ──
+        _publish_kafka_sync("whatsapp.received", {
+            "event_type": "whatsapp_received",
+            "customer_phone": customer_phone,
+            "channel": "whatsapp",
+        })
+        if result.get("ticket_id"):
+            _publish_kafka_sync("ticket.created", {
+                "event_type": "ticket_created",
+                "ticket_id": result["ticket_id"],
+                "customer_phone": customer_phone,
+                "channel": "whatsapp",
+            })
+
+        _record_metrics_sync("whatsapp")
         return reply
     except Exception as e:
         logger.error(f"Agent error: {e}", exc_info=True)

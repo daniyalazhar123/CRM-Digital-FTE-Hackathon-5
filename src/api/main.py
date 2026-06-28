@@ -1,5 +1,5 @@
 """
-CRM Digital FTE - FastAPI Service Layer
+CRM Digital FTE — FastAPI Service Layer
 """
 
 import os
@@ -14,26 +14,50 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-# Prometheus (Safe)
+# Prometheus — safe import
 PROMETHEUS_AVAILABLE = False
 try:
-    from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     pass
 
-# Dummy metrics if prometheus not available
+# Dummy metrics when prometheus_client not installed
 if not PROMETHEUS_AVAILABLE:
-    class DummyMetric:
+    class _Dummy:
         def inc(self, *args, **kwargs): pass
         def observe(self, *args, **kwargs): pass
-    REQUEST_COUNT = REQUEST_LATENCY = ERROR_COUNT = CHANNEL_MESSAGES = ESCALATION_COUNT = DummyMetric()
+        def labels(self, *args, **kwargs): return _Dummy()
+        def set(self, *args, **kwargs): pass
+    REQUEST_COUNT = REQUEST_LATENCY = ERROR_COUNT = CHANNEL_MESSAGES = _Dummy()
+    ESCALATION_COUNT = CACHE_HITS = CACHE_MISSES = KB_SEARCH_DURATION = _Dummy()
+    TICKETS_CREATED = TICKETS_RESOLVED = ERROR_RATE = ESCALATION_RATE = _Dummy()
 else:
-    REQUEST_COUNT = Counter('api_requests_total', 'Total API requests', ['method', 'endpoint', 'status'])
-    REQUEST_LATENCY = Histogram('api_request_latency_seconds', 'API request latency', ['method', 'endpoint'])
-    ERROR_COUNT = Counter('api_errors_total', 'Total API errors', ['type', 'endpoint'])
-    CHANNEL_MESSAGES = Counter('channel_messages_total', 'Messages by channel', ['channel'])
-    ESCALATION_COUNT = Counter('escalations_total', 'Total escalations', ['reason'])
+    # ── API-level counters ──
+    REQUEST_COUNT = Counter("api_requests_total", "Total API requests", ["method", "endpoint", "status"])
+    REQUEST_LATENCY = Histogram("api_request_latency_seconds", "API request latency", ["method", "endpoint"],
+                                 buckets=(.005, .01, .025, .05, .075, .1, .25, .5, .75, 1.0, 2.5, 5.0, 7.5, 10.0))
+    ERROR_COUNT = Counter("api_errors_total", "Total API errors", ["type", "endpoint"])
+    ERROR_RATE = Gauge("error_rate_ratio", "Error rate over 1h window")
+
+    # ── Channel counters ──
+    CHANNEL_MESSAGES = Counter("channel_messages_total", "Messages by channel", ["channel"])
+
+    # ── Escalation counters ──
+    ESCALATION_COUNT = Counter("escalations_total", "Total escalations", ["reason"])
+    ESCALATION_RATE = Gauge("escalation_rate_ratio", "Escalation rate over 1h window")
+
+    # ── Cache counters ──
+    CACHE_HITS = Counter("cache_hits_total", "Redis cache hits", ["cache_type"])
+    CACHE_MISSES = Counter("cache_misses_total", "Redis cache misses", ["cache_type"])
+
+    # ── KB search latency ──
+    KB_SEARCH_DURATION = Histogram("kb_search_duration_seconds", "KB pgvector search latency",
+                                   buckets=(.01, .025, .05, .1, .25, .5, .75, 1.0, 2.5, 5.0))
+
+    # ── Ticket counters ──
+    TICKETS_CREATED = Counter("tickets_created_total", "Total tickets created")
+    TICKETS_RESOLVED = Counter("tickets_resolved_total", "Total tickets resolved")
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -80,22 +104,61 @@ app.include_router(gmail_router)
 
 @app.get("/health")
 async def health_check():
+    redis_ok = False
+    kafka_ok = False
+    try:
+        from cache.redis_client import get_cache
+        cache = get_cache()
+        redis_ok = await cache.health_check()
+    except Exception:
+        pass
+    try:
+        from workers.kafka_producer import get_producer
+        producer = get_producer()
+        kafka_ok = True
+    except Exception:
+        pass
     return {
-        "status": "healthy",
+        "status": "healthy" if redis_ok else "degraded",
         "service": "Customer Success FTE API",
         "version": "2.1.0",
-        "channels": {"email": "active", "whatsapp": "active", "web_form": "active"}
+        "channels": {"email": "active", "whatsapp": "active", "web_form": "active"},
+        "redis": "connected" if redis_ok else "disconnected",
+        "kafka": "available" if kafka_ok else "unavailable"
     }
+
 
 @app.get("/metrics")
 async def metrics_endpoint():
-    return {
-        "status": "ok",
+    """Prometheus /metrics endpoint — returns exposition format."""
+    if PROMETHEUS_AVAILABLE:
+        return Response(
+            content=generate_latest(REGISTRY),
+            media_type=CONTENT_TYPE_LATEST
+        )
+    return JSONResponse({
+        "status": "warning",
+        "message": "prometheus_client not installed — install with: pip install prometheus-client",
         "service": "Customer Success FTE API",
-        "version": "2.1.0",
-        "message": "Metrics endpoint working",
-        "channels": ["whatsapp", "email", "web_form"]
-    }
+        "version": "2.1.0"
+    })
+
+
+@app.get("/metrics/summary")
+async def metrics_summary():
+    """Human-readable metrics summary."""
+    from workers.metrics_collector import get_metrics_store
+    store = get_metrics_store()
+    return store.get_summary()
+
+
+@app.get("/metrics/channels")
+async def metrics_channels():
+    """Per-channel metrics."""
+    from workers.metrics_collector import get_metrics_store
+    store = get_metrics_store()
+    return store.get_channel_metrics()
+
 
 # =============================================================================
 # REQUEST MIDDLEWARE
@@ -118,7 +181,6 @@ async def track_requests(request: Request, call_next):
 
     return response
 
-# (Baqi Gmail, Customer Lookup, etc. endpoints agar chahiye toh baad mein add kar sakte hain)
 
 # =============================================================================
 # MAIN

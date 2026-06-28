@@ -67,7 +67,7 @@ You receive messages from three channels. Adapt your communication style:
 3. Track sentiment of incoming message
 4. Check escalation triggers
 5. If escalation needed → call escalate_ticket, then send_response
-6. If not escalated → search_knowledge_base, generate answer, send_response
+6. If not escalated → search_knowledge_base (pgvector semantic search → top 5 chunks), generate answer from retrieved chunks, send_response
 
 ## Response Quality Standards
 - Be concise: Answer the question directly, then offer additional help

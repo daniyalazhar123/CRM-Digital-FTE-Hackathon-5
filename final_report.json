@@ -1,0 +1,150 @@
+{
+  "timestamp": "2026-06-28T02:40:51Z",
+  "service": "CRM Digital FTE",
+  "version": "2.1.0",
+  "total_checks": 34,
+  "passed": 33,
+  "failed": 0,
+  "warnings": 1,
+  "skipped": 0,
+  "pass_rate_pct": 97.1,
+  "verdict": "ALL SYSTEMS OPERATIONAL",
+  "details": {
+    "Redis health check": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Redis SET/GET": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Redis TTL": {
+      "status": "PASS",
+      "detail": "TTL=60s"
+    },
+    "Redis reconnect": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Embedding dimensions": {
+      "status": "PASS",
+      "detail": "dim=1536"
+    },
+    "Document chunks in DB": {
+      "status": "PASS",
+      "detail": "13 chunks"
+    },
+    "KB search success": {
+      "status": "PASS",
+      "detail": "source=redis_cache"
+    },
+    "KB results count": {
+      "status": "PASS",
+      "detail": "3 results"
+    },
+    "KB cache hit": {
+      "status": "WARN",
+      "detail": "expected after load test"
+    },
+    "Customer cache hit": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Cache invalidation": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Kafka 5 topics": {
+      "status": "PASS",
+      "detail": "published to 5 topics"
+    },
+    "prometheus_client installed": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "All 12 metrics in exposition format": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Escalation: refund": {
+      "status": "PASS",
+      "detail": "escalated=True reason=refund_request"
+    },
+    "Escalation: normal": {
+      "status": "PASS",
+      "detail": "escalated=False"
+    },
+    "Sentiment: positive": {
+      "status": "PASS",
+      "detail": "score=1.00"
+    },
+    "Sentiment: negative": {
+      "status": "PASS",
+      "detail": "score=0.00"
+    },
+    "Gmail handler import": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Gmail _extract_email_data": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Gmail _extract_body": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Gmail duplicate prevention": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "WhatsApp handler import": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "WhatsApp router registered": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Customer creation": {
+      "status": "PASS",
+      "detail": "id=9ce982db-6b5f-47be-8bc1-fa9a8331fbcc"
+    },
+    "Ticket creation": {
+      "status": "PASS",
+      "detail": "id=TKT-20260628024047-7482"
+    },
+    "Customer history": {
+      "status": "PASS",
+      "detail": "0 messages"
+    },
+    "Customer stats": {
+      "status": "PASS",
+      "detail": "1 tickets"
+    },
+    "Ticket escalation": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "Docker: crm-kafka": {
+      "status": "PASS",
+      "detail": "Up 11 minutes (healthy)"
+    },
+    "Docker: crm-zookeeper": {
+      "status": "PASS",
+      "detail": "Up 11 minutes"
+    },
+    "Docker: odoo_hackathon": {
+      "status": "PASS",
+      "detail": "Up 6 hours (healthy)"
+    },
+    "Docker: odoo_postgres": {
+      "status": "PASS",
+      "detail": "Up 6 hours (healthy)"
+    },
+    "Docker: crm-redis": {
+      "status": "PASS",
+      "detail": "Up 6 hours (healthy)"
+    }
+  }
+}

@@ -157,14 +157,15 @@ class CRMDatabase:
     """
     PostgreSQL database layer matching InMemoryStore interface.
     Provides CRUD operations for customers, tickets, messages, and embeddings.
-    
-    Falls back to in-memory dict-based storage if PostgreSQL is unavailable.
-    Set USE_FALLBACK=true in .env to force fallback mode.
+
+    In production (ENVIRONMENT=production), PostgreSQL MUST be available.
+    Set USE_FALLBACK=true in .env to explicitly enable in-memory mode for development.
     """
 
     def __init__(self):
         self._fallback = None
         use_fallback_env = os.getenv('USE_FALLBACK', '').lower()
+        env = os.getenv('ENVIRONMENT', 'development').lower()
         if use_fallback_env in ('true', '1', 'yes'):
             print("Using in-memory fallback database (USE_FALLBACK=true)")
             self._fallback = _FallbackDB()
@@ -174,8 +175,16 @@ class CRMDatabase:
                 conn = pool.get_connection()
                 pool.release_connection(conn)
             except Exception as e:
-                print(f"PostgreSQL unavailable ({e}), using in-memory fallback database")
-                print("Set USE_FALLBACK=false or start PostgreSQL for production mode.")
+                err_msg = (
+                    f"PostgreSQL is not available: {e}\n"
+                    f"Ensure the database is running and DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD "
+                    f"are correctly set in .env\n"
+                    f"To use in-memory fallback for development, set USE_FALLBACK=true in .env"
+                )
+                if env == 'production':
+                    raise RuntimeError(f"FATAL: {err_msg}")
+                print(f"WARNING: {err_msg}")
+                print("Falling back to in-memory database. Set USE_FALLBACK=false to disable this.")
                 self._fallback = _FallbackDB()
 
     def __getattribute__(self, name):
@@ -507,59 +516,95 @@ class CRMDatabase:
         }
     
     # -------------------------------------------------------------------------
-    # VECTOR SEARCH (pgvector)
+    # DOCUMENT CHUNKS (pgvector) — single retrieval pipeline
     # -------------------------------------------------------------------------
     
-    def store_embedding(self, content: str, embedding_vector: List[float], 
-                        category: str = None, source: str = None) -> str:
-        """
-        Store content with vector embedding.
-        """
-        embedding_id = self._generate_uuid()
-        vector_str = '[' + ','.join(map(str, embedding_vector)) + ']'
-        
+    def _ensure_document_chunks_table(self):
+        """Create document_chunks table if not exists."""
+        try:
+            with DatabaseConnection(autocommit=True) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS document_chunks (
+                            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            document_id     UUID NOT NULL DEFAULT gen_random_uuid(),
+                            document_title  VARCHAR(500) NOT NULL,
+                            chunk_index     INTEGER NOT NULL DEFAULT 0,
+                            content         TEXT NOT NULL,
+                            embedding       VECTOR(1536),
+                            metadata        JSONB DEFAULT '{}',
+                            created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding
+                        ON document_chunks USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100)
+                    """)
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id
+                        ON document_chunks (document_id)
+                    """)
+        except Exception:
+            pass
+
+    def store_document_chunk(self, document_title: str, chunk_index: int,
+                             content: str, embedding: List[float],
+                             metadata: dict = None,
+                             document_id: str = None) -> str:
+        """Store a single document chunk with its embedding."""
+        self._ensure_document_chunks_table()
+        chunk_id = document_id or self._generate_uuid()
+        vector_str = '[' + ','.join(map(str, embedding)) + ']'
+        meta_json = json.dumps(metadata or {})
         with DatabaseConnection(autocommit=True) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    INSERT INTO embeddings (id, content, embedding, category, source)
-                    VALUES (%s, %s, %s::vector, %s, %s)
-                    RETURNING *
-                """, (embedding_id, content, vector_str, category, source))
-                
-                result = cur.fetchone()
-                print(f"✓ Stored embedding: {category or 'uncategorized'}")
-                return str(embedding_id)
-    
-    def search_similar(self, query_vector: List[float], limit: int = 5, 
-                       category: str = None) -> List[dict]:
-        """
-        Search for similar content using vector similarity.
-        """
-        vector_str = '[' + ','.join(map(str, query_vector)) + ']'
-        
+                    INSERT INTO document_chunks
+                        (document_id, document_title, chunk_index, content, embedding, metadata)
+                    VALUES (%s::uuid, %s, %s, %s, %s::vector, %s::jsonb)
+                    RETURNING id
+                """, (chunk_id, document_title, chunk_index, content, vector_str, meta_json))
+                row = cur.fetchone()
+                return str(row['id'])
+
+    def search_document_chunks(self, query_embedding: List[float],
+                                limit: int = 5) -> List[dict]:
+        """Search document chunks by cosine similarity to query embedding."""
+        self._ensure_document_chunks_table()
+        vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
         with DatabaseConnection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                if category:
-                    cur.execute("""
-                        SELECT content, category, source,
-                               1 - (embedding <=> %s::vector) as similarity
-                        FROM embeddings
-                        WHERE category = %s
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT %s
-                    """, (vector_str, category, vector_str, limit))
-                else:
-                    cur.execute("""
-                        SELECT content, category, source,
-                               1 - (embedding <=> %s::vector) as similarity
-                        FROM embeddings
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT %s
-                    """, (vector_str, vector_str, limit))
-                
-                results = cur.fetchall()
-                print(f"✓ Found {len(results)} similar results")
-                return [dict(r) for r in results]
+                cur.execute("""
+                    SELECT
+                        document_title,
+                        chunk_index,
+                        content,
+                        metadata,
+                        1 - (embedding <=> %s::vector) AS similarity
+                    FROM document_chunks
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                """, (vector_str, vector_str, limit))
+                rows = cur.fetchall()
+                results = []
+                for r in rows:
+                    d = dict(r)
+                    d['similarity'] = round(d['similarity'], 4)
+                    results.append(d)
+                return results
+
+    def get_document_chunk_count(self) -> int:
+        """Return total number of stored chunks."""
+        self._ensure_document_chunks_table()
+        try:
+            with DatabaseConnection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT COUNT(*) FROM document_chunks")
+                    return cur.fetchone()[0]
+        except Exception:
+            return 0
     
     # -------------------------------------------------------------------------
     # UTILITY METHODS
@@ -583,6 +628,48 @@ class CRMDatabase:
         """Close database connections."""
         get_db_pool().close_all()
 
+    # -------------------------------------------------------------------------
+    # PROCESSED GMAIL MESSAGE IDS (duplicate prevention)
+    # -------------------------------------------------------------------------
+
+    def _ensure_processed_table(self):
+        """Create processed_emails table if not exists."""
+        try:
+            with DatabaseConnection(autocommit=True) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS processed_emails (
+                            msg_id VARCHAR(255) PRIMARY KEY,
+                            processed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                        )
+                    """)
+        except Exception:
+            pass
+
+    def is_email_processed(self, msg_id: str) -> bool:
+        """Check if a Gmail message ID has already been processed."""
+        try:
+            self._ensure_processed_table()
+            with DatabaseConnection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 FROM processed_emails WHERE msg_id = %s", (msg_id,))
+                    return cur.fetchone() is not None
+        except Exception:
+            return False
+
+    def mark_email_processed(self, msg_id: str) -> None:
+        """Record a Gmail message ID as processed."""
+        try:
+            self._ensure_processed_table()
+            with DatabaseConnection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO processed_emails (msg_id, processed_at) VALUES (%s, NOW()) ON CONFLICT (msg_id) DO NOTHING",
+                        (msg_id,)
+                    )
+        except Exception:
+            pass
+
 
 # =============================================================================
 # FALLBACK DATABASE (In-Memory, used when PostgreSQL is unavailable)
@@ -595,8 +682,9 @@ class _FallbackDB:
         self.customers = {}
         self.tickets = {}
         self.messages = []
-        self.embeddings = []
+        self._document_chunks = []
         self._next_ticket_num = 1
+        self._processed_email_ids = set()
 
     def _gen_uuid(self):
         import uuid
@@ -724,33 +812,58 @@ class _FallbackDB:
             'last_interaction': str(c.get('created_at', ''))
         }
 
-    def store_embedding(self, content, embedding_vector, category=None, source=None):
-        eid = self._gen_uuid()
-        self.embeddings.append({
-            'id': eid, 'content': content, 'embedding': embedding_vector,
-            'category': category, 'source': source,
-            'created_at': datetime.now(timezone.utc)
+    def store_document_chunk(self, document_title: str, chunk_index: int,
+                              content: str, embedding: list,
+                              metadata: dict = None,
+                              document_id: str = None) -> str:
+        eid = document_id or self._gen_uuid()
+        self._document_chunks.append({
+            'id': eid,
+            'document_id': document_id or self._gen_uuid(),
+            'document_title': document_title,
+            'chunk_index': chunk_index,
+            'content': content,
+            'embedding': embedding,
+            'metadata': metadata or {},
+            'created_at': datetime.now(timezone.utc),
         })
         return eid
 
-    def search_similar(self, query_vector, limit=5, category=None):
-        candidates = [e for e in self.embeddings if category is None or e.get('category') == category]
+    def search_document_chunks(self, query_embedding: list,
+                                limit: int = 5) -> list:
+        import math
+        candidates = [c for c in self._document_chunks if c.get('embedding')]
         scored = []
-        for e in candidates:
-            import math
-            dot = sum(a * b for a, b in zip(query_vector, e['embedding']))
-            nq = math.sqrt(sum(x * x for x in query_vector)) or 1
-            ne = math.sqrt(sum(x * x for x in e['embedding'])) or 1
+        for c in candidates:
+            dot = sum(a * b for a, b in zip(query_embedding, c['embedding']))
+            nq = math.sqrt(sum(x * x for x in query_embedding)) or 1
+            ne = math.sqrt(sum(x * x for x in c['embedding'])) or 1
             sim = dot / (nq * ne)
-            scored.append((sim, e))
+            scored.append((sim, c))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [{'content': e['content'], 'category': e.get('category'), 'source': e.get('source'), 'similarity': s} for s, e in scored[:limit]]
+        return [{
+            'document_title': c['document_title'],
+            'chunk_index': c['chunk_index'],
+            'content': c['content'],
+            'metadata': c.get('metadata', {}),
+            'similarity': round(s, 4),
+        } for s, c in scored[:limit]]
+
+    def get_document_chunk_count(self) -> int:
+        return len(self._document_chunks)
 
     def get_connection(self):
         return None
 
     def close(self):
         pass
+
+    # Processed Gmail message IDs
+    def is_email_processed(self, msg_id: str) -> bool:
+        return msg_id in self._processed_email_ids
+
+    def mark_email_processed(self, msg_id: str) -> None:
+        self._processed_email_ids.add(msg_id)
 
 
 def _empty_stats_dict():

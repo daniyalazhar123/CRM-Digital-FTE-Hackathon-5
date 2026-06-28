@@ -1,56 +1,82 @@
 """
 CRM Digital FTE - Agent Tools
-Phase 2: Specialization
+Phase 2: Specialization — OpenAI Agents SDK
 
 All function tools for the Customer Success FTE agent.
-These tools provide the agent's capabilities for handling customer support.
-Both plain functions (callable directly) and @function_tool wrappers (for Agent SDK).
+- Plain functions (callable directly, backward compatible)
+- @function_tool wrappers from OpenAI Agents SDK (for Agent(tools=...))
 """
 
 import os
 import json
 import logging
+import asyncio
 from typing import Optional
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 from db.database import CRMDatabase
+from embeddings import embed_text
+from cache.redis_client import cached_kb_search, cache_kb_search, cached_customer_lookup, cache_customer_lookup, invalidate_customer_cache
 
 logger = logging.getLogger(__name__)
 
 db = CRMDatabase()
 
-try:
-    from agents import function_tool as _agents_function_tool
-    def function_tool(func):
-        _agents_function_tool(func)
-        return func
-except ImportError:
-    def function_tool(func):
-        return func
+# =============================================================================
+# PLAIN FUNCTIONS — callable directly, backward compatible
+# =============================================================================
 
 
-@function_tool
 def search_knowledge_base(query: str, max_results: int = 5) -> str:
-    """Search product documentation for relevant information."""
+    """Search product documentation using pgvector cosine similarity.
+
+    Real production pipeline:
+      query → Redis cache check → embed_text() → pgvector similarity search → top K chunks → Redis cache store
+    """
     try:
-        logger.info(f"Searching KB for: {query}")
-        dummy_vector = [0.1] * 1536
-        results = db.search_similar(
-            query_vector=dummy_vector,
-            limit=max_results
+        logger.info(f"Searching KB for: {query[:80]}")
+
+        # ── Check Redis cache first ──
+        cached = asyncio.run(cached_kb_search(query, max_results))
+        if cached is not None:
+            logger.info("[REDIS] KB cache HIT for: %s", query[:80])
+            return json.dumps({
+                "success": True,
+                "source": "redis_cache",
+                "results": cached,
+            })
+
+        # ── Embed query ──
+        query_embedding = embed_text(query)
+        if query_embedding is None:
+            return json.dumps({
+                "success": False,
+                "error": "Embedding unavailable — set OPENAI_API_KEY in .env",
+                "source": None,
+                "results": [],
+            })
+
+        # ── pgvector search ──
+        results = db.search_document_chunks(
+            query_embedding=query_embedding,
+            limit=max_results,
         )
-        if results:
-            return json.dumps({"success": True, "source": "embeddings", "results": results})
-        fallback_results = _search_product_docs(query, max_results)
-        return json.dumps({"success": True, "source": "product_docs", "results": fallback_results})
+
+        # ── Store in Redis cache ──
+        asyncio.run(cache_kb_search(query, results, max_results))
+
+        return json.dumps({
+            "success": True,
+            "source": "pgvector",
+            "results": results,
+        })
     except Exception as e:
         logger.error(f"Knowledge search error: {e}")
         return json.dumps({"success": False, "error": str(e)})
 
 
-@function_tool
 def create_ticket(customer_email: str, message: str, channel: str,
                   priority: str = "medium", customer_name: Optional[str] = None) -> str:
     """Create a support ticket for tracking. ALWAYS call at start of every conversation."""
@@ -64,17 +90,39 @@ def create_ticket(customer_email: str, message: str, channel: str,
         ticket = db.create_ticket(
             customer_id=customer['id'], issue=message, priority=priority, channel=channel
         )
+
+        # ── Invalidate customer cache (stats changed) ──
+        identifier = customer.get('email') or customer.get('phone') or customer_email
+        asyncio.run(invalidate_customer_cache(identifier))
+
         return json.dumps({"success": True, "ticket_id": ticket['id'], "customer_id": customer['id'], "status": "open"})
     except Exception as e:
         logger.error(f"Create ticket error: {e}")
         return json.dumps({"success": False, "error": str(e)})
 
 
-@function_tool
 def get_customer_context(customer_email: str) -> str:
-    """Get customer's complete context including history and stats."""
+    """Get customer's complete context including history and stats.
+
+    Production pipeline:
+      identifier → Redis cache check → DB lookup → Redis cache store
+    """
     try:
         logger.info(f"Getting context for {customer_email}")
+
+        # ── Check Redis cache first ──
+        cached = asyncio.run(cached_customer_lookup(customer_email))
+        if cached is not None:
+            logger.info("[REDIS] Customer cache HIT for: %s", customer_email)
+            return json.dumps({
+                "success": True,
+                "customer": cached.get("customer"),
+                "history": cached.get("history", []),
+                "stats": cached.get("stats", {}),
+                "is_returning_customer": cached.get("stats", {}).get("total_tickets", 0) > 0,
+                "source": "redis_cache",
+            })
+
         is_phone = customer_email.startswith('+') or customer_email.replace('-', '').replace(' ', '').isdigit()
         if is_phone:
             customer = db.get_or_create_customer(phone=customer_email)
@@ -95,9 +143,18 @@ def get_customer_context(customer_email: str) -> str:
                 serializable_stats[key] = value.isoformat()
             else:
                 serializable_stats[key] = value
+
+        # ── Store in Redis cache ──
+        cache_payload = {
+            "customer": {"id": customer['id'], "email": customer.get('email'), "name": customer.get('name')},
+            "history": serializable_history,
+            "stats": serializable_stats,
+        }
+        asyncio.run(cache_customer_lookup(customer_email, cache_payload))
+
         return json.dumps({
             "success": True,
-            "customer": {"id": customer['id'], "email": customer.get('email'), "name": customer.get('name')},
+            "customer": cache_payload["customer"],
             "history": serializable_history,
             "stats": serializable_stats,
             "is_returning_customer": serializable_stats.get('total_tickets', 0) > 0
@@ -107,7 +164,6 @@ def get_customer_context(customer_email: str) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
-@function_tool
 def escalate_ticket(ticket_id: str, reason: str, notes: str = "") -> str:
     """Escalate a ticket to human support."""
     try:
@@ -130,7 +186,6 @@ def escalate_ticket(ticket_id: str, reason: str, notes: str = "") -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
-@function_tool
 def send_response(ticket_id: str, response: str, channel: str) -> str:
     """Send response to customer via their channel. ALWAYS use this to reply."""
     try:
@@ -151,7 +206,6 @@ def send_response(ticket_id: str, response: str, channel: str) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
-@function_tool
 def track_sentiment(customer_id: str, sentiment_score: float) -> str:
     """Track customer sentiment and detect trends."""
     try:
@@ -168,28 +222,66 @@ def track_sentiment(customer_id: str, sentiment_score: float) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
-def _search_product_docs(query: str, max_results: int = 5) -> list:
-    """Fallback search in product-docs.md file."""
-    try:
-        docs_path = os.path.join(os.path.dirname(__file__), '..', '..', 'context', 'product-docs.md')
-        with open(docs_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        sections = content.split('## ')
-        query_lower = query.lower()
-        results = []
-        for section in sections[1:]:
-            lines = section.split('\n')
-            title = lines[0].strip()
-            if query_lower in title.lower() or query_lower in section.lower():
-                results.append({
-                    "title": title,
-                    "content": section[:500] + "..." if len(section) > 500 else section,
-                    "score": 10 if query_lower in title.lower() else 5
-                })
-        return results[:max_results]
-    except Exception as e:
-        logger.error(f"Fallback search error: {e}")
-        return []
 
 
+
+# =============================================================================
+# FUNCTION TOOL WRAPPERS — for OpenAI Agents SDK Agent(tools=...)
+# =============================================================================
+
+from agents import function_tool
+from agents.tool import FunctionTool
+
+
+@function_tool
+def _tool_search_knowledge_base(query: str, max_results: int = 5) -> str:
+    """Search product documentation for relevant information. Call when customer asks a question about product features, usage, or troubleshooting."""
+    logger.info("[TOOL] _tool_search_knowledge_base(query=%s, max_results=%s)", query[:50], max_results)
+    return search_knowledge_base(query, max_results)
+
+
+@function_tool
+def _tool_create_ticket(customer_email: str, message: str, channel: str,
+                        priority: str = "medium", customer_name: Optional[str] = None) -> str:
+    """Create a support ticket for tracking. ALWAYS call at the start of every conversation to log the interaction."""
+    logger.info("[TOOL] _tool_create_ticket(customer_email=%s, channel=%s)", customer_email, channel)
+    return create_ticket(customer_email, message, channel, priority, customer_name)
+
+
+@function_tool
+def _tool_get_customer_context(customer_email: str) -> str:
+    """Get customer's complete context including history, total tickets, sentiment trend, and returning status. Call at the start of every conversation."""
+    logger.info("[TOOL] _tool_get_customer_context(customer_email=%s)", customer_email)
+    return get_customer_context(customer_email)
+
+
+@function_tool
+def _tool_escalate_ticket(ticket_id: str, reason: str, notes: str = "") -> str:
+    """Escalate a ticket to human support. Use for pricing inquiries, refund requests, legal threats, negative sentiment, frustrated customers, or when customer asks for a human."""
+    logger.info("[TOOL] _tool_escalate_ticket(ticket_id=%s, reason=%s)", ticket_id, reason)
+    return escalate_ticket(ticket_id, reason, notes)
+
+
+@function_tool
+def _tool_send_response(ticket_id: str, response: str, channel: str) -> str:
+    """Send a formatted response to the customer via their channel. ALWAYS use this to reply — it enforces channel-specific limits (WhatsApp: 300 chars, Email: 3000 chars, Web: 1800 chars)."""
+    logger.info("[TOOL] _tool_send_response(ticket_id=%s, channel=%s, response_len=%s)", ticket_id, channel, len(response))
+    return send_response(ticket_id, response, channel)
+
+
+@function_tool
+def _tool_track_sentiment(customer_id: str, sentiment_score: float) -> str:
+    """Track customer sentiment (0.0-1.0) and detect frustration trends. Call after every customer message."""
+    logger.info("[TOOL] _tool_track_sentiment(customer_id=%s, score=%.2f)", customer_id, sentiment_score)
+    return track_sentiment(customer_id, sentiment_score)
+
+
+AGENT_TOOLS: list[FunctionTool] = [
+    _tool_search_knowledge_base,
+    _tool_create_ticket,
+    _tool_get_customer_context,
+    _tool_escalate_ticket,
+    _tool_send_response,
+    _tool_track_sentiment,
+]
 

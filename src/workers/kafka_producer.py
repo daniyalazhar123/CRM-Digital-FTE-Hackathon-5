@@ -21,39 +21,32 @@ logger = logging.getLogger(__name__)
 
 class KafkaTopics:
     """Kafka topic definitions for the CRM Digital FTE system."""
-    
-    # Ticket ingestion
+
+    # ── Required hackathon topics ──
+    EMAIL_RECEIVED = "email.received"
+    WHATSAPP_RECEIVED = "whatsapp.received"
+    TICKET_CREATED = "ticket.created"
+    TICKET_UPDATED = "ticket.updated"
+    METRICS_EVENTS = "metrics.events"
+
+    # ── Legacy / extended topics ──
     TICKETS_INCOMING = "fte.tickets.incoming"
-    
-    # Channel-specific inbound
     CHANNEL_EMAIL_INBOUND = "fte.channels.email.inbound"
     CHANNEL_WHATSAPP_INBOUND = "fte.channels.whatsapp.inbound"
     CHANNEL_WEBFORM_INBOUND = "fte.channels.webform.inbound"
-    
-    # Channel-specific outbound
     CHANNEL_EMAIL_OUTBOUND = "fte.channels.email.outbound"
     CHANNEL_WHATSAPP_OUTBOUND = "fte.channels.whatsapp.outbound"
-    
-    # Escalations
     ESCALATIONS = "fte.escalations"
-    
-    # Metrics
     METRICS = "fte.metrics"
-    
-    # Dead letter queue
     DLQ = "fte.dlq"
-    
-    # All topics list
+
+    # All topics for auto-creation
     ALL_TOPICS = [
-        TICKETS_INCOMING,
-        CHANNEL_EMAIL_INBOUND,
-        CHANNEL_WHATSAPP_INBOUND,
-        CHANNEL_WEBFORM_INBOUND,
-        CHANNEL_EMAIL_OUTBOUND,
-        CHANNEL_WHATSAPP_OUTBOUND,
-        ESCALATIONS,
-        METRICS,
-        DLQ
+        EMAIL_RECEIVED, WHATSAPP_RECEIVED,
+        TICKET_CREATED, TICKET_UPDATED, METRICS_EVENTS,
+        TICKETS_INCOMING, CHANNEL_EMAIL_INBOUND, CHANNEL_WHATSAPP_INBOUND,
+        CHANNEL_WEBFORM_INBOUND, CHANNEL_EMAIL_OUTBOUND, CHANNEL_WHATSAPP_OUTBOUND,
+        ESCALATIONS, METRICS, DLQ
     ]
 
 
