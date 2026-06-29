@@ -92,7 +92,9 @@ if GROQ_API_KEY and GROQ_API_KEY != "your-groq-api-key-here":
     try:
         groq_async_client = AsyncOpenAI(
             api_key=GROQ_API_KEY,
-            base_url=BASE_URL
+            base_url=BASE_URL,
+            timeout=10.0,
+            max_retries=0,
         )
         groq_model = OpenAIChatCompletionsModel(
             model=MODEL_NAME,
