@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import time
+import asyncio
 from typing import Optional, Tuple
 from dotenv import load_dotenv
 
@@ -87,6 +88,7 @@ from openai import AsyncOpenAI
 
 groq_async_client = None
 groq_model = None
+ayesha_agent = None
 
 if GROQ_API_KEY and GROQ_API_KEY != "your-groq-api-key-here":
     try:
@@ -101,8 +103,16 @@ if GROQ_API_KEY and GROQ_API_KEY != "your-groq-api-key-here":
             openai_client=groq_async_client
         )
         logger.info(f"Groq model '{MODEL_NAME}' initialized via Agents SDK")
+
+        ayesha_agent = Agent(
+            name="Ayesha",
+            instructions=CUSTOMER_SUCCESS_SYSTEM_PROMPT,
+            model=groq_model,
+            tools=AGENT_TOOLS,
+        )
+        logger.info("Ayesha Agent initialized at module level with %s tools", len(AGENT_TOOLS))
     except Exception as e:
-        logger.warning(f"Failed to initialize Groq model via Agents SDK: {e}")
+        logger.warning(f"Failed to initialize Groq/Ayesha Agent: {e}")
 else:
     logger.warning("No GROQ_API_KEY set — agent will use fallback responses")
 
@@ -259,8 +269,8 @@ def process_message(customer_email: str, message: str, channel: str,
     start_time = time.time()
     logger.info(f"Processing {channel} message from {customer_email}")
 
-    if groq_model is None:
-        logger.error("Groq model not initialized: check GROQ_API_KEY in .env")
+    if groq_model is None or ayesha_agent is None:
+        logger.error("Ayesha Agent not initialized: check GROQ_API_KEY in .env")
         return {
             "response": "Service unavailable — Groq API not configured. Please set GROQ_API_KEY in .env",
             "ticket_id": None,
@@ -272,32 +282,29 @@ def process_message(customer_email: str, message: str, channel: str,
         }
 
     try:
-        # --- Build dynamic system prompt (string-only preprocessing, no tool calls) ---
-        system_prompt = CUSTOMER_SUCCESS_SYSTEM_PROMPT
-
+        # --- Build dynamic system prompt additions ---
+        prompt_additions = ""
         if _detect_islamic_greeting(message):
-            system_prompt += "\n\n## Current Interaction\nCustomer opened with an Islamic greeting. You MUST begin your response with 'Assalam o alaikum!' (with exclamation mark)."
-
+            prompt_additions += "\n\n## Current Interaction\nCustomer opened with an Islamic greeting. You MUST begin your response with 'Assalam o alaikum!' (with exclamation mark)."
         if _detect_urdu(message):
-            system_prompt += "\n\n## Language\nCustomer is writing in Urdu or mixing Urdu with English. Respond naturally in the same style."
-
+            prompt_additions += "\n\n## Language\nCustomer is writing in Urdu or mixing Urdu with English. Respond naturally in the same style."
         name_ask_patterns = ["ap ka naam", "aap ka naam", "your name", "naam kya hai", "name kya hai", "kaun ho", "kon ho", "who are you"]
         if any(kw in message.lower() for kw in name_ask_patterns):
-            system_prompt += "\n\n## Name Question\nThe customer asked for your name. Introduce yourself as Ayesha, your role as a customer support agent, and ask for their name warmly."
-
+            prompt_additions += "\n\n## Name Question\nThe customer asked for your name. Introduce yourself as Ayesha, your role as a customer support agent, and ask for their name warmly."
         name_preference_patterns = ["ke naam se bulao", "naam se bulao", "call me", "bulao", "mera naam", "mujhe ... bulao"]
         if any(kw in message.lower() for kw in name_preference_patterns):
-            system_prompt += "\n\n## Name Preference\nThe customer wants you to address them by a specific name or preference. Ackowledge this warmly (e.g., 'Bilkul!') and use their requested name going forward."
-
+            prompt_additions += "\n\n## Name Preference\nThe customer wants you to address them by a specific name or preference. Ackowledge this warmly (e.g., 'Bilkul!') and use their requested name going forward."
         order_keywords = ["order", "ticket", "kahan", "kahaan", "status", "track", "delivery", "shipping", "tracking"]
         if any(kw in message.lower() for kw in order_keywords):
-            system_prompt += "\n\n## Order Status\nCustomer is asking about their order/ticket status. Look up their account with get_customer_context and reference their ticket."
+            prompt_additions += "\n\n## Order Status\nCustomer is asking about their order/ticket status. Look up their account with get_customer_context and reference their ticket."
 
-        # --- Create Agent with all tools — SDK will orchestrate everything ---
+        instructions = CUSTOMER_SUCCESS_SYSTEM_PROMPT + prompt_additions
+
+        # --- Create Agent with dynamic instructions each call ---
         logger.info("[AGENT] Creating Agent with %s tools", len(AGENT_TOOLS))
         agent = Agent(
             name="Ayesha",
-            instructions=system_prompt,
+            instructions=instructions,
             model=groq_model,
             tools=AGENT_TOOLS,
         )
@@ -308,18 +315,21 @@ def process_message(customer_email: str, message: str, channel: str,
             f"Customer message: {message}"
         )
 
-        logger.info("[RUNNER] Calling Runner.run_sync() — Agent SDK will orchestrate all tool calls")
-        result = Runner.run_sync(
-            agent,
-            input=input_text,
-            max_turns=15,
-        )
-        logger.info("[RUNNER] Runner.run_sync() completed")
+        logger.info("[RUNNER] Calling Runner.run() (async via explicit event loop) — SDK orchestrates all tool calls")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            run_result = loop.run_until_complete(
+                Runner.run(agent, input=input_text, max_turns=15)
+            )
+        finally:
+            loop.close()
+        logger.info("[RUNNER] Runner.run() completed")
 
-        response = result.final_output_as(str) or ""
+        response = run_result.final_output_as(str) or ""
 
         # --- Parse tool call metadata from conversation history ---
-        items = result.to_input_list()
+        items = run_result.to_input_list()
         meta = _extract_agent_metadata(items)
         logger.info("[META] ticket_id=%s, customer_id=%s, tool_calls=%s, escalated=%s",
                     meta["ticket_id"], meta["customer_id"], meta["tool_calls_count"], meta["escalated"])
