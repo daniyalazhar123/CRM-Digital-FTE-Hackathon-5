@@ -28,7 +28,8 @@ DB_CONFIG = {
     'port': os.getenv('DB_PORT', '5432'),
     'dbname': os.getenv('DB_NAME', 'crm_db'),
     'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'postgres123')
+    'password': os.getenv('DB_PASSWORD', 'postgres123'),
+    'client_encoding': 'utf8',
 }
 
 # Connection pool settings - Increased for concurrent load
@@ -68,9 +69,9 @@ class DatabasePool:
                 maxconn=POOL_MAX_CONN,
                 **DB_CONFIG
             )
-            print(f"✓ Database pool created: {POOL_MIN_CONN}-{POOL_MAX_CONN} connections")
+            print(f"[OK] Database pool created: {POOL_MIN_CONN}-{POOL_MAX_CONN} connections")
         except Exception as e:
-            print(f"✗ Failed to create database pool: {e}")
+            print(f"[FAIL] Failed to create database pool: {e}")
             raise
     
     def get_connection(self):
@@ -108,7 +109,7 @@ class DatabasePool:
         """Close all connections."""
         if self._pool:
             self._pool.closeall()
-            print("✓ All database connections closed")
+            print("[OK] All database connections closed")
 
 
 # =============================================================================
